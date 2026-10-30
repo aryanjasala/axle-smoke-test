@@ -1,0 +1,153 @@
+{
+  "$comment": "Screens tests/e2e/a11y.spec.js checks with axe-core. This file belongs to the plugin: apply-template.py only writes it when it is missing. The fields are described in docs/DEVELOPMENT.md.",
+  "include": [
+    "#wpbody-content"
+  ],
+  "exclude": [
+    ".ast-frame"
+  ],
+  "screens": [
+    {
+      "name": "Tools > Smoke Test, no runs yet",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "js": "seed.js",
+          "call": "resetRuns"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test",
+      "steps": [
+        {
+          "waitFor": ".ast-empty"
+        }
+      ]
+    },
+    {
+      "name": "Runs list with the latest run",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test",
+      "steps": [
+        {
+          "waitFor": ".ast-runs"
+        }
+      ]
+    },
+    {
+      "name": "A red run with the rollback offer",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.red}",
+      "steps": [
+        {
+          "waitFor": ".ast-problems"
+        }
+      ]
+    },
+    {
+      "name": "An amber run with a JavaScript error",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.amber}",
+      "steps": [
+        {
+          "waitFor": ".ast-results"
+        }
+      ]
+    },
+    {
+      "name": "A green run",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.green}",
+      "steps": [
+        {
+          "waitFor": ".ast-results"
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&tab=settings",
+      "steps": [
+        {
+          "waitFor": ".ast-settings"
+        }
+      ]
+    },
+    {
+      "name": "Checking your site panel with its verdict",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "js": "seed.js",
+          "call": "waitingRun"
+        }
+      ],
+      "url": "/wp-admin/plugins.php",
+      "include": [
+        ".ast-panel"
+      ],
+      "steps": [
+        {
+          "waitFor": ".ast-panel[data-verdict]"
+        }
+      ]
+    },
+    {
+      "name": "Notice about a failed run",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        },
+        {
+          "js": "seed.js",
+          "call": "showNotice",
+          "args": [
+            "{seeded.red}"
+          ]
+        }
+      ],
+      "url": "/wp-admin/index.php",
+      "include": [
+        ".ast-alert-notice"
+      ]
+    }
+  ],
+  "skip": {}
+}
