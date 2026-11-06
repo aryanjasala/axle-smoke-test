@@ -20,11 +20,30 @@ defined( 'ABSPATH' ) || exit;
 final class Network implements Service {
 
 	/**
+	 * The screen's hook suffix.
+	 *
+	 * @var string
+	 */
+	private string $hook = '';
+
+	/**
 	 * Hooks the network menu.
 	 */
 	public function register(): void {
 		if ( is_multisite() ) {
 			add_action( 'network_admin_menu', array( $this, 'menu' ) );
+			add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
+		}
+	}
+
+	/**
+	 * Loads the shared stylesheet on this screen only.
+	 *
+	 * @param string $hook Hook suffix.
+	 */
+	public function assets( $hook ): void {
+		if ( '' !== $this->hook && $hook === $this->hook ) {
+			AxleUi::enqueue();
 		}
 	}
 
@@ -32,7 +51,7 @@ final class Network implements Service {
 	 * Adds the page.
 	 */
 	public function menu(): void {
-		add_submenu_page(
+		$this->hook = (string) add_submenu_page(
 			'settings.php',
 			__( 'Smoke Test', 'axle-smoke-test' ),
 			__( 'Smoke Test', 'axle-smoke-test' ),
@@ -79,16 +98,18 @@ final class Network implements Service {
 			wp_die( esc_html__( 'Sorry, you are not allowed to see this page.', 'axle-smoke-test' ), '', array( 'response' => 403 ) );
 		}
 
-		echo '<div class="wrap ast-wrap"><h1>' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1>';
-		echo '<p>' . esc_html__( 'The latest smoke test of each site. Open a site\'s Tools > Smoke Test for its runs and settings.', 'axle-smoke-test' ) . '</p>';
+		echo '<div class="wrap axle-ui ast-wrap"><h1>' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1><hr class="wp-header-end">';
+		echo '<p class="axle-intro">' . esc_html__( 'The latest smoke test of each site. Open a site\'s Tools > Smoke Test for its runs and settings.', 'axle-smoke-test' ) . '</p>';
 		echo '<table class="widefat striped"><thead><tr><th scope="col">' . esc_html__( 'Site', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Verdict', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'When', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Change', 'axle-smoke-test' ) . '</th></tr></thead><tbody>';
 		foreach ( self::latest_per_site() as $row ) {
 			$run = $row['run'];
 			echo '<tr><th scope="row"><a href="' . esc_url( $row['url'] ) . '">' . esc_html( $row['name'] ) . '</a></th>';
-			echo '<td>' . ( $run ? Display::badge( (string) $run['verdict'], (string) $run['status'] ) : esc_html__( 'No runs yet', 'axle-smoke-test' ) ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
-			echo '<td>' . esc_html( $run ? Display::date( (string) $run['created_gmt'] ) : '' ) . '</td>';
+			echo '<td>' . ( $run ? Display::badge( (string) $run['verdict'], (string) $run['status'] ) : '<span class="axle-badge axle-badge--neutral">' . esc_html__( 'No runs yet', 'axle-smoke-test' ) . '</span>' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+			echo '<td>' . ( $run ? Display::time( (string) $run['created_gmt'] ) : '' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 			echo '<td>' . esc_html( $run ? Display::change( $run ) : '' ) . '</td></tr>';
 		}
-		echo '</tbody></table></div>';
+		echo '</tbody></table>';
+		AxleUi::footer();
+		echo '</div>';
 	}
 }

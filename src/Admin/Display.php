@@ -25,15 +25,40 @@ final class Display {
 	 */
 	public static function badge( string $verdict, string $status = '' ): string {
 		$labels = array(
-			'red'   => __( 'Red', 'axle-smoke-test' ),
-			'amber' => __( 'Amber', 'axle-smoke-test' ),
-			'green' => __( 'Green', 'axle-smoke-test' ),
+			'red'   => array( 'error', __( 'Red', 'axle-smoke-test' ) ),
+			'amber' => array( 'warning', __( 'Amber', 'axle-smoke-test' ) ),
+			'green' => array( 'good', __( 'Green', 'axle-smoke-test' ) ),
 		);
 		if ( isset( $labels[ $verdict ] ) ) {
-			return '<span class="ast-badge ast-badge-' . esc_attr( $verdict ) . '">' . esc_html( $labels[ $verdict ] ) . '</span>';
+			return '<span class="axle-badge axle-badge--' . esc_attr( $labels[ $verdict ][0] ) . '">' . esc_html( $labels[ $verdict ][1] ) . '</span>';
 		}
 
-		return '<span class="ast-badge ast-badge-none">' . esc_html( self::status( $status ) ) . '</span>';
+		$tones = array(
+			'queued'          => 'info',
+			'running'         => 'info',
+			'waiting_browser' => 'info',
+			'failed'          => 'error',
+		);
+
+		return '<span class="axle-badge axle-badge--' . esc_attr( $tones[ $status ] ?? 'neutral' ) . '">' . esc_html( self::status( $status ) ) . '</span>';
+	}
+
+	/**
+	 * A GMT date as relative time, with the exact time on hover.
+	 *
+	 * @param string $gmt Date.
+	 * @return string HTML.
+	 */
+	public static function time( string $gmt ): string {
+		$time = '' === $gmt || '0000-00-00 00:00:00' === $gmt ? 0 : (int) strtotime( $gmt . ' UTC' );
+		if ( ! $time ) {
+			return '';
+		}
+		$now = time();
+		/* translators: %s: a time span such as "5 minutes". */
+		$text = $time > $now ? sprintf( __( 'in %s', 'axle-smoke-test' ), human_time_diff( $now, $time ) ) : sprintf( __( '%s ago', 'axle-smoke-test' ), human_time_diff( $time, $now ) );
+
+		return '<time datetime="' . esc_attr( gmdate( 'c', $time ) ) . '" title="' . esc_attr( self::date( $gmt ) ) . '">' . esc_html( $text ) . '</time>';
 	}
 
 	/**

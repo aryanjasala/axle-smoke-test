@@ -80,7 +80,8 @@ final class SettingsView {
 		wp_nonce_field( 'axle_smoke_test_save_settings' );
 		echo '<input type="hidden" name="action" value="axle_smoke_test_save_settings">';
 
-		echo '<h2>' . esc_html__( 'Pages picked from the site', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Pages picked from the site', 'axle-smoke-test' ) . '</h2>';
 		echo '<fieldset class="ast-checks"><legend class="screen-reader-text">' . esc_html__( 'Pages picked from the site', 'axle-smoke-test' ) . '</legend>';
 		$types = array(
 			'home'        => __( 'Home page', 'axle-smoke-test' ),
@@ -105,8 +106,10 @@ final class SettingsView {
 			);
 		}
 		echo '</fieldset>';
+		echo '</section>';
 
-		echo '<h2>' . esc_html__( 'Checks', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Checks', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		$this->checkbox_row( 'browser_tier', __( 'Browser check', 'axle-smoke-test' ), __( 'Also load the pages in a hidden frame of an admin\'s browser, for JavaScript errors and layout changes.', 'axle-smoke-test' ), $s );
 		$this->number_row( 'text_threshold', __( 'Text change threshold', 'axle-smoke-test' ), __( 'Percent of the visible text that may change before a page turns amber.', 'axle-smoke-test' ), $s, 1, 100 );
@@ -125,8 +128,10 @@ final class SettingsView {
 		echo '</fieldset></td></tr>';
 		$this->checkbox_row( 'daily', __( 'Daily check', 'axle-smoke-test' ), __( 'Also run once a day, even when nothing changed.', 'axle-smoke-test' ), $s );
 		echo '</table>';
+		echo '</section>';
 
-		echo '<h2>' . esc_html__( 'Alerts', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Alerts', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		echo '<tr><th scope="row"><label for="ast-alert-on">' . esc_html__( 'Alert on', 'axle-smoke-test' ) . '</label></th><td><select id="ast-alert-on" name="settings[alert_on]">';
 		$levels = array(
@@ -157,13 +162,17 @@ final class SettingsView {
 		echo '</select></td></tr>';
 		$this->checkbox_row( 'notice', __( 'Admin notice', 'axle-smoke-test' ), __( 'Show a notice in wp-admin until it is dismissed or a green run follows.', 'axle-smoke-test' ), $s );
 		echo '</table>';
+		echo '</section>';
 
-		echo '<h2>' . esc_html__( 'Rollback', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Rollback', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		$this->checkbox_row( 'auto_rollback', __( 'Auto rollback', 'axle-smoke-test' ), __( 'Roll back by itself after a red run, when the errors come from the updated plugin or theme, or only one item was updated. Database changes are not undone.', 'axle-smoke-test' ), $s );
 		echo '</table>';
+		echo '</section>';
 
-		echo '<h2>' . esc_html__( 'Access', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Access', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		$this->checkbox_row( 'cron_admin_checks', __( 'wp-admin checks from cron', 'axle-smoke-test' ), __( 'Runs started by WP-Cron or WP-CLI open wp-admin URLs as the user below, with a single-use login that lasts 60 seconds. Off: they only check that the login page loads.', 'axle-smoke-test' ), $s );
 		echo '<tr><th scope="row"><label for="ast-cron-user">' . esc_html__( 'Cron user', 'axle-smoke-test' ) . '</label></th><td>';
@@ -186,12 +195,15 @@ final class SettingsView {
 		}
 		echo '</td></tr>';
 		echo '</table>';
+		echo '</section>';
 
-		echo '<h2>' . esc_html__( 'Retention', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Retention', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		$this->number_row( 'retention_days', __( 'Keep runs for', 'axle-smoke-test' ), __( 'Days. Baselines are always kept.', 'axle-smoke-test' ), $s, 1, 3650 );
 		$this->number_row( 'retention_runs', __( 'Keep at most', 'axle-smoke-test' ), __( 'Runs.', 'axle-smoke-test' ), $s, 10, 100000 );
 		echo '</table>';
+		echo '</section>';
 
 		submit_button( __( 'Save settings', 'axle-smoke-test' ) );
 		echo '</form>';
@@ -203,7 +215,8 @@ final class SettingsView {
 	 * The key URL list with add and remove.
 	 */
 	private function urls_section(): void {
-		echo '<h2>' . esc_html__( 'Key URLs', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Key URLs', 'axle-smoke-test' ) . '</h2>';
 		/* translators: %d: maximum number of URLs. */
 		echo '<p>' . esc_html( sprintf( __( 'Every run checks these, up to %d. Pages picked from the site follow the boxes below; add your own for checkout, landing pages or anything that must never break.', 'axle-smoke-test' ), Urls::max() ) ) . '</p>';
 		echo '<table class="widefat striped ast-urls"><thead><tr>';
@@ -226,11 +239,12 @@ final class SettingsView {
 			echo '</td></tr>';
 		}
 		echo '</tbody></table>';
+		echo '</section>';
 
-		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="ast-add-url">';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="axle-card ast-add-url">';
 		wp_nonce_field( 'axle_smoke_test_add_url' );
 		echo '<input type="hidden" name="action" value="axle_smoke_test_add_url">';
-		echo '<h3>' . esc_html__( 'Add a URL', 'axle-smoke-test' ) . '</h3>';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Add a URL', 'axle-smoke-test' ) . '</h2>';
 		echo '<p><label for="ast-url">' . esc_html__( 'URL or path', 'axle-smoke-test' ) . '</label><br><input type="text" class="regular-text" id="ast-url" name="url" placeholder="/checkout/" required></p>';
 		echo '<p><label for="ast-label">' . esc_html__( 'Label', 'axle-smoke-test' ) . '</label><br><input type="text" class="regular-text" id="ast-label" name="label"></p>';
 		echo '<p><label for="ast-expected">' . esc_html__( 'Expected status', 'axle-smoke-test' ) . '</label><br><input type="text" class="small-text" id="ast-expected" name="expected" value="200" aria-describedby="ast-expected-help"> <span class="description" id="ast-expected-help">' . esc_html__( 'One or more, like 200 or 200, 302.', 'axle-smoke-test' ) . '</span></p>';
@@ -243,16 +257,18 @@ final class SettingsView {
 	 * Install or remove the early collector.
 	 */
 	private function mu_section(): void {
-		echo '<h2>' . esc_html__( 'Early collector', 'axle-smoke-test' ) . '</h2>';
+		echo '<section class="axle-card">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Early collector', 'axle-smoke-test' ) . '</h2>';
 		echo '<p>' . esc_html__( 'Without it, PHP warnings raised while other plugins load are only seen through debug.log or as fatal errors. With it, one small file in wp-content/mu-plugins starts the collector first, on smoke test requests only. It is removed when this plugin is deactivated.', 'axle-smoke-test' ) . '</p>';
 		$installed = MuPlugin::installed();
-		echo '<p>' . ( $installed ? esc_html__( 'Installed.', 'axle-smoke-test' ) : esc_html__( 'Not installed.', 'axle-smoke-test' ) ) . '</p>';
+		echo '<p>' . ( $installed ? '<span class="axle-badge axle-badge--good">' . esc_html__( 'Installed', 'axle-smoke-test' ) . '</span>' : '<span class="axle-badge axle-badge--neutral">' . esc_html__( 'Not installed', 'axle-smoke-test' ) . '</span>' ) . '</p>';
 		Page::post_button(
 			'mu_plugin',
 			$installed ? __( 'Remove the early collector', 'axle-smoke-test' ) : __( 'Install the early collector', 'axle-smoke-test' ),
 			array( 'do' => $installed ? 'remove' : 'install' ),
 			'button'
 		);
+		echo '</section>';
 	}
 
 	/**
