@@ -35,7 +35,7 @@ test( 'demo: an update breaks the site, the smoke test catches it, one click rol
 			// One click back to the version that worked, and the check runs again.
 			await demo.click( page.getByRole( 'button', { name: /Roll back Smoke Fixture/ } ), 300 );
 			await expect( page.locator( '.notice-success' ).first() ).toContainText( 'Rolled back.' );
-			await expect( page.locator( '.ast-run-title .ast-badge' ) ).toHaveText( 'Green', { timeout: 60_000 } );
+			await expect( page.locator( '.ast-run-title .axle-badge' ) ).toHaveText( 'Green', { timeout: 60_000 } );
 			await demo.pause( 3000 );
 		} );
 	} finally {

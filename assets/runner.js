@@ -115,6 +115,24 @@
 		green: __( 'Green: all key pages look fine', 'axle-smoke-test' ),
 	};
 
+	/** The tone of each verdict, from the shared design. */
+	const TONES = { red: 'error', amber: 'warning', green: 'good' };
+
+	/**
+	 * Shows or hides the core spinner of a status box.
+	 *
+	 * @param {HTMLElement} box  Box.
+	 * @param {boolean}     busy Whether work is running.
+	 */
+	function setBusy( box, busy ) {
+		box.classList.toggle( 'ast-busy', busy );
+		box.setAttribute( 'aria-busy', busy ? 'true' : 'false' );
+		const spinner = box.querySelector( '.spinner' );
+		if ( spinner ) {
+			spinner.classList.toggle( 'is-active', busy );
+		}
+	}
+
 	/**
 	 * Fills a status box with the finished run.
 	 *
@@ -124,12 +142,12 @@
 	function showVerdict( box, run ) {
 		const verdict = run.verdict || 'green';
 		const counts = ( run.summary && run.summary.counts ) || {};
-		box.classList.remove( 'ast-busy' );
+		setBusy( box, false );
 		box.dataset.verdict = verdict;
 		const status = box.querySelector( '.ast-panel-status' );
 		status.textContent = '';
 		const badge = document.createElement( 'span' );
-		badge.className = `ast-badge ast-badge-${ verdict }`;
+		badge.className = `axle-badge axle-badge--${ TONES[ verdict ] || 'neutral' }`;
 		badge.textContent = VERDICTS[ verdict ] || verdict;
 		status.appendChild( badge );
 		const text = document.createElement( 'span' );
@@ -158,7 +176,7 @@
 	 */
 	async function runInBox( box, plan ) {
 		const status = box.querySelector( '.ast-panel-status' );
-		box.classList.add( 'ast-busy' );
+		setBusy( box, true );
 		if ( ! plan.urls || ! plan.urls.length ) {
 			const run = plan.run.status === 'waiting_browser' ? await api( `/runs/${ plan.run.id }/complete`, { method: 'POST', data: { tier: 'browser' } } ) : plan.run;
 			showVerdict( box, run );
@@ -186,7 +204,7 @@
 	 * @param {Object}      error Error from apiFetch.
 	 */
 	function showError( box, error ) {
-		box.classList.remove( 'ast-busy' );
+		setBusy( box, false );
 		box.dataset.verdict = 'error';
 		box.querySelector( '.ast-panel-status' ).textContent = ( error && error.message ) || __( 'The smoke test could not run.', 'axle-smoke-test' );
 	}
@@ -201,9 +219,10 @@
 		button.addEventListener( 'click', async ( event ) => {
 			event.preventDefault();
 			button.disabled = true;
+			button.setAttribute( 'aria-busy', 'true' );
 			box.hidden = false;
 			box.querySelector( '.ast-panel-status' ).textContent = __( 'Checking every key URL from the server', 'axle-smoke-test' );
-			box.classList.add( 'ast-busy' );
+			setBusy( box, true );
 			try {
 				const plan = await api( '/runs', { method: 'POST', data: { browser: true } } );
 				const run = await runInBox( box, plan );
@@ -211,6 +230,7 @@
 			} catch ( error ) {
 				showError( box, error );
 				button.disabled = false;
+				button.removeAttribute( 'aria-busy' );
 			}
 		} );
 	}
@@ -228,7 +248,7 @@
 			}
 			busy = true;
 			box.hidden = false;
-			box.classList.add( 'ast-busy' );
+			setBusy( box, true );
 			box.querySelector( '.ast-panel-status' ).textContent = __( 'Checking your site after the change', 'axle-smoke-test' );
 			try {
 				const plan = await api( path, { method: 'POST' } );

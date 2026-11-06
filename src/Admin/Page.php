@@ -132,6 +132,7 @@ final class Page implements Service {
 		if ( $hook !== $this->hook ) {
 			return;
 		}
+		AxleUi::enqueue();
 		wp_enqueue_style( 'axle-smoke-test-admin' );
 	}
 
@@ -148,8 +149,14 @@ final class Page implements Service {
 		$run_id = isset( $_GET['run'] ) ? absint( $_GET['run'] ) : 0;
 		// phpcs:enable
 
-		echo '<div class="wrap ast-wrap">';
+		$latest = $this->runner->runs()->latest();
+
+		echo '<div class="wrap axle-ui ast-wrap">';
 		echo '<h1>' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1>';
+		if ( $latest ) {
+			echo '<span class="axle-status">' . Display::badge( (string) $latest['verdict'], (string) $latest['status'] ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+		}
+		echo '<hr class="wp-header-end">';
 		$this->messages();
 
 		echo '<nav class="nav-tab-wrapper" aria-label="' . esc_attr__( 'Smoke Test sections', 'axle-smoke-test' ) . '">';
@@ -158,13 +165,17 @@ final class Page implements Service {
 		echo '</nav>';
 
 		if ( 'settings' === $tab ) {
+			echo '<p class="axle-intro">' . esc_html__( 'Choose which pages to check, how sensitive the check is and who hears about problems.', 'axle-smoke-test' ) . '</p>';
 			( new SettingsView( $this->settings, $this->runner->urls() ) )->render();
 		} elseif ( $run_id ) {
+			echo '<p class="axle-intro">' . esc_html__( 'What the smoke test found on each page in this run.', 'axle-smoke-test' ) . '</p>';
 			$this->render_run( $run_id );
 		} else {
+			echo '<p class="axle-intro">' . esc_html__( 'Checks your key pages after every update, theme switch or deploy, and tells you what broke.', 'axle-smoke-test' ) . '</p>';
 			$this->render_runs();
 		}
 
+		AxleUi::footer();
 		echo '</div>';
 	}
 
@@ -201,7 +212,7 @@ final class Page implements Service {
 		$runs   = $this->runner->runs();
 		$latest = $runs->latest();
 
-		echo '<div class="ast-toolbar">';
+		echo '<div class="axle-actions ast-toolbar">';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( 'axle_smoke_test_run' );
 		echo '<input type="hidden" name="action" value="axle_smoke_test_run">';
@@ -209,11 +220,10 @@ final class Page implements Service {
 		echo '</form>';
 		echo '<p class="description">' . esc_html__( 'Checks every key URL from the server, then in this browser.', 'axle-smoke-test' ) . '</p>';
 		echo '</div>';
-		echo '<div class="ast-run-box ast-panel-inline" role="status" aria-live="polite" hidden><span class="ast-panel-status"></span></div>';
+		echo '<div class="notice notice-info inline ast-run-box ast-panel-inline" role="status" aria-live="polite" hidden><p><span class="spinner"></span><span class="ast-panel-status"></span></p></div>';
 
 		if ( ! $latest ) {
-			echo '<div class="ast-empty"><h2>' . esc_html__( 'No runs yet', 'axle-smoke-test' ) . '</h2>';
-			echo '<p>' . esc_html__( 'A run starts by itself after every plugin, theme or core update, theme switch, plugin activation or deploy. Or press Run now to check your key pages and set the first baseline.', 'axle-smoke-test' ) . '</p></div>';
+			echo '<div class="axle-empty"><p>' . esc_html__( 'No runs yet. A run starts by itself after every plugin, theme or core update, theme switch, plugin activation or deploy. Or press Run now to check your key pages and set the first baseline.', 'axle-smoke-test' ) . '</p></div>';
 			return;
 		}
 
@@ -229,7 +239,7 @@ final class Page implements Service {
 		);
 		$total = $runs->count();
 
-		echo '<h2>' . esc_html__( 'All runs', 'axle-smoke-test' ) . '</h2>';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'All runs', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="widefat striped ast-runs"><thead><tr>';
 		foreach ( array( __( 'Run', 'axle-smoke-test' ), __( 'Started', 'axle-smoke-test' ), __( 'Trigger', 'axle-smoke-test' ), __( 'Change', 'axle-smoke-test' ), __( 'Verdict', 'axle-smoke-test' ), __( 'Red / amber / green', 'axle-smoke-test' ), __( 'Duration', 'axle-smoke-test' ) ) as $column ) {
 			echo '<th scope="col">' . esc_html( $column ) . '</th>';
@@ -240,7 +250,7 @@ final class Page implements Service {
 			echo '<tr>';
 			/* translators: %d: run ID. */
 			echo '<td><a class="row-title" href="' . esc_url( self::url( array( 'run' => $run['id'] ) ) ) . '">' . esc_html( sprintf( __( 'Run #%d', 'axle-smoke-test' ), $run['id'] ) ) . '</a></td>';
-			echo '<td>' . esc_html( Display::date( (string) $run['created_gmt'] ) ) . '</td>';
+			echo '<td>' . Display::time( (string) $run['created_gmt'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 			echo '<td>' . esc_html( Display::trigger( (string) $run['trigger_type'] ) ) . '</td>';
 			echo '<td>' . esc_html( Display::change( $run ) ) . '</td>';
 			echo '<td>' . Display::badge( (string) $run['verdict'], (string) $run['status'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
@@ -276,23 +286,42 @@ final class Page implements Service {
 		$counts = (array) ( $run['summary']['counts'] ?? array() );
 		$tiers  = (array) ( $run['summary']['tiers'] ?? array() );
 
-		echo '<section class="ast-card ast-latest" aria-labelledby="ast-latest-title">';
-		echo '<h2 id="ast-latest-title">' . esc_html__( 'Latest run', 'axle-smoke-test' ) . ' ' . Display::badge( (string) $run['verdict'], (string) $run['status'] ) . '</h2>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
-		echo '<dl class="ast-facts">';
-		echo '<dt>' . esc_html__( 'When', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( Display::date( (string) $run['created_gmt'] ) ) . '</dd>';
+		$this->stats( $counts );
+
+		echo '<section class="axle-card ast-latest" aria-labelledby="ast-latest-title">';
+		echo '<div class="axle-card__head"><h2 class="axle-card__title" id="ast-latest-title">' . esc_html__( 'Latest run', 'axle-smoke-test' ) . '</h2>' . Display::badge( (string) $run['verdict'], (string) $run['status'] ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+		echo '<dl class="axle-facts">';
+		echo '<dt>' . esc_html__( 'When', 'axle-smoke-test' ) . '</dt><dd>' . Display::time( (string) $run['created_gmt'] ) . '</dd>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 		echo '<dt>' . esc_html__( 'Trigger', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( Display::trigger( (string) $run['trigger_type'] ) ) . '</dd>';
 		$change = Display::change( $run );
 		if ( '' !== $change ) {
 			echo '<dt>' . esc_html__( 'Change', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( $change ) . '</dd>';
 		}
-		if ( $counts ) {
-			/* translators: 1: red pages, 2: amber pages, 3: green pages. */
-			echo '<dt>' . esc_html__( 'Pages', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( sprintf( __( '%1$d red, %2$d amber, %3$d green', 'axle-smoke-test' ), (int) ( $counts['red'] ?? 0 ), (int) ( $counts['amber'] ?? 0 ), (int) ( $counts['green'] ?? 0 ) ) ) . '</dd>';
-		}
 		echo '<dt>' . esc_html__( 'Checked by', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( self::tiers( $tiers, (string) $run['status'] ) ) . '</dd>';
 		echo '</dl>';
-		echo '<p><a class="button" href="' . esc_url( self::url( array( 'run' => $run['id'] ) ) ) . '">' . esc_html__( 'See the results', 'axle-smoke-test' ) . '</a></p>';
+		echo '<p class="axle-actions"><a class="button" href="' . esc_url( self::url( array( 'run' => $run['id'] ) ) ) . '">' . esc_html__( 'See the results', 'axle-smoke-test' ) . '</a></p>';
 		echo '</section>';
+	}
+
+	/**
+	 * The page counts of a run, as stats.
+	 *
+	 * @param array $counts Counts by verdict.
+	 */
+	private function stats( array $counts ): void {
+		if ( ! $counts ) {
+			return;
+		}
+		$stats = array(
+			'red'   => array( 'error', __( 'red pages', 'axle-smoke-test' ) ),
+			'amber' => array( 'warning', __( 'amber pages', 'axle-smoke-test' ) ),
+			'green' => array( 'good', __( 'green pages', 'axle-smoke-test' ) ),
+		);
+		echo '<div class="axle-stats">';
+		foreach ( $stats as $verdict => $stat ) {
+			echo '<div class="axle-stat axle-stat--' . esc_attr( $stat[0] ) . '"><span class="axle-stat__value">' . (int) ( $counts[ $verdict ] ?? 0 ) . '</span><span class="axle-stat__label">' . esc_html( $stat[1] ) . '</span></div>';
+		}
+		echo '</div>';
 	}
 
 	/**
@@ -338,11 +367,14 @@ final class Page implements Service {
 		$summary = $run['summary'];
 
 		echo '<p><a href="' . esc_url( self::url() ) . '">' . esc_html__( 'All runs', 'axle-smoke-test' ) . '</a></p>';
-		/* translators: %d: run ID. */
-		echo '<h2 class="ast-run-title">' . esc_html( sprintf( __( 'Run #%d', 'axle-smoke-test' ), $run_id ) ) . ' ' . Display::badge( (string) $run['verdict'], (string) $run['status'] ) . '</h2>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+		$this->stats( (array) ( $summary['counts'] ?? array() ) );
 
-		echo '<dl class="ast-facts">';
-		echo '<dt>' . esc_html__( 'Started', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( Display::date( (string) $run['created_gmt'] ) ) . '</dd>';
+		echo '<section class="axle-card" aria-labelledby="ast-run-title">';
+		/* translators: %d: run ID. */
+		echo '<div class="axle-card__head"><h2 class="axle-card__title ast-run-title" id="ast-run-title">' . esc_html( sprintf( __( 'Run #%d', 'axle-smoke-test' ), $run_id ) ) . ' ' . Display::badge( (string) $run['verdict'], (string) $run['status'] ) . '</h2></div>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+
+		echo '<dl class="axle-facts">';
+		echo '<dt>' . esc_html__( 'Started', 'axle-smoke-test' ) . '</dt><dd>' . Display::time( (string) $run['created_gmt'] ) . '</dd>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 		echo '<dt>' . esc_html__( 'Trigger', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( Display::trigger( (string) $run['trigger_type'] ) ) . '</dd>';
 		$change = Display::change( $run );
 		if ( '' !== $change ) {
@@ -355,6 +387,15 @@ final class Page implements Service {
 			echo '<dt>' . esc_html__( 'Server tier took', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( $duration ) . '</dd>';
 		}
 		echo '</dl>';
+
+		echo '<div class="axle-actions">';
+		if ( $results ) {
+			$this->post_button( 'baseline', __( 'Accept as baseline', 'axle-smoke-test' ), array( 'run' => $run_id ), 'button' );
+		}
+		$report = add_query_arg( '_wpnonce', wp_create_nonce( 'wp_rest' ), rest_url( 'axle-smoke-test/v1/runs/' . $run_id . '/report' ) );
+		echo '<a class="button" href="' . esc_url( $report ) . '" download="smoke-test-' . (int) $run_id . '.json">' . esc_html__( 'Download report (JSON)', 'axle-smoke-test' ) . '</a>';
+		echo '</div>';
+		echo '</section>';
 
 		if ( 'failed' === $run['status'] ) {
 			echo '<div class="notice notice-error inline"><p>' . esc_html( (string) ( $summary['error'] ?? '' ) ) . '</p>';
@@ -380,14 +421,6 @@ final class Page implements Service {
 			}
 		}
 
-		echo '<div class="ast-actions">';
-		if ( $results ) {
-			$this->post_button( 'baseline', __( 'Accept as baseline', 'axle-smoke-test' ), array( 'run' => $run_id ), 'button' );
-		}
-		$report = add_query_arg( '_wpnonce', wp_create_nonce( 'wp_rest' ), rest_url( 'axle-smoke-test/v1/runs/' . $run_id . '/report' ) );
-		echo '<a class="button" href="' . esc_url( $report ) . '" download="smoke-test-' . (int) $run_id . '.json">' . esc_html__( 'Download report (JSON)', 'axle-smoke-test' ) . '</a>';
-		echo '</div>';
-
 		$this->results_table( $run, $results );
 	}
 
@@ -400,11 +433,11 @@ final class Page implements Service {
 		$summary = $run['summary'];
 		$sources = (array) ( $summary['sources'] ?? array() );
 
-		echo '<section class="ast-card ast-problems" aria-labelledby="ast-problems-title">';
-		echo '<h3 id="ast-problems-title">' . esc_html__( 'What to do', 'axle-smoke-test' ) . '</h3>';
+		echo '<section class="axle-card ast-problems" aria-labelledby="ast-problems-title">';
+		echo '<h2 class="axle-card__title" id="ast-problems-title">' . esc_html__( 'What to do', 'axle-smoke-test' ) . '</h2>';
 
 		if ( $sources ) {
-			echo '<p>' . esc_html__( 'Problems by source:', 'axle-smoke-test' ) . '</p><ul class="ast-sources">';
+			echo '<p>' . esc_html__( 'Problems by source:', 'axle-smoke-test' ) . '</p><ul class="ul-disc">';
 			foreach ( $sources as $source => $count ) {
 				/* translators: 1: plugin or theme name, 2: number of problems. */
 				echo '<li>' . esc_html( sprintf( _n( '%1$s: %2$d problem', '%1$s: %2$d problems', (int) $count, 'axle-smoke-test' ), Display::source( (string) $source ), (int) $count ) ) . '</li>';
@@ -414,10 +447,15 @@ final class Page implements Service {
 
 		$candidates = 'rollback' === $run['trigger_type'] ? array() : $this->rollback->candidates( $run );
 		$rolled     = wp_list_pluck( (array) ( $summary['rolled_back'] ?? array() ), 'id' );
+		$first      = true;
 		foreach ( $candidates as $candidate ) {
 			if ( in_array( $candidate['id'], $rolled, true ) ) {
 				continue;
 			}
+			echo '<p class="description">' . esc_html(
+				/* translators: 1: plugin or theme name, 2: version. */
+				sprintf( __( 'Puts the files of %1$s back to version %2$s and runs the smoke test again. Database changes made by the update stay. You can update again later.', 'axle-smoke-test' ), $candidate['name'], $candidate['version'] )
+			) . '</p>';
 			$this->post_button(
 				'rollback',
 				/* translators: 1: plugin or theme name, 2: version. */
@@ -426,8 +464,9 @@ final class Page implements Service {
 					'run'  => (int) $run['id'],
 					'item' => $candidate['id'],
 				),
-				'button button-primary ast-rollback' 
+				$first ? 'button button-primary ast-rollback' : 'button ast-rollback'
 			);
+			$first    = false;
 			$rehearse = Family::rehearsal_url();
 			if ( '' !== $rehearse ) {
 				/* translators: %s: plugin or theme name. */
@@ -461,7 +500,7 @@ final class Page implements Service {
 	 */
 	private function results_table( array $run, array $results ): void {
 		if ( ! $results ) {
-			echo '<p>' . esc_html__( 'No results yet.', 'axle-smoke-test' ) . '</p>';
+			echo '<div class="axle-empty"><p>' . esc_html__( 'No results yet. They show up here when the checks finish.', 'axle-smoke-test' ) . '</p></div>';
 			return;
 		}
 
@@ -471,7 +510,7 @@ final class Page implements Service {
 			'worker'  => __( 'Worker', 'axle-smoke-test' ),
 		);
 
-		echo '<h3>' . esc_html__( 'Results', 'axle-smoke-test' ) . '</h3>';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Results', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="widefat striped ast-results"><thead><tr>';
 		foreach ( array( __( 'Page', 'axle-smoke-test' ), __( 'Tier', 'axle-smoke-test' ), __( 'Verdict', 'axle-smoke-test' ), __( 'Status before and after', 'axle-smoke-test' ), __( 'Time', 'axle-smoke-test' ), __( 'What changed', 'axle-smoke-test' ), __( 'Baseline', 'axle-smoke-test' ) ) as $column ) {
 			echo '<th scope="col">' . esc_html( $column ) . '</th>';
@@ -500,7 +539,7 @@ final class Page implements Service {
 				echo '<ul class="ast-reasons">';
 				foreach ( $reasons as $reason ) {
 					$source = ! empty( $reason['source'] ) && 'unknown' !== $reason['source'] ? ' (' . Display::source( (string) $reason['source'] ) . ')' : '';
-					echo '<li class="ast-reason ast-reason-' . esc_attr( (string) $reason['level'] ) . '">' . esc_html( (string) $reason['message'] . $source ) . '</li>';
+					echo '<li class="ast-reason">' . Display::badge( (string) $reason['level'] ) . ' ' . esc_html( (string) $reason['message'] . $source ) . '</li>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 				}
 				echo '</ul>';
 			} elseif ( ! empty( $meta['compared_with'] ) ) {
@@ -738,7 +777,7 @@ final class Page implements Service {
 	 * Registers the stylesheet, for this screen and the panel.
 	 */
 	public static function register_style(): void {
-		wp_register_style( 'axle-smoke-test-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array(), VERSION );
+		wp_register_style( 'axle-smoke-test-admin', plugins_url( 'assets/admin.css', PLUGIN_FILE ), array( AxleUi::HANDLE ), VERSION );
 	}
 
 	/**
