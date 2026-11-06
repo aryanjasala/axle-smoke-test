@@ -115,6 +115,7 @@ final class Panel implements Service {
 			return;
 		}
 
+		AxleUi::enqueue();
 		wp_enqueue_style( 'axle-smoke-test-admin' );
 		self::enqueue_runner();
 	}
@@ -169,8 +170,8 @@ final class Panel implements Service {
 
 		if ( $this->show ) {
 			$hidden = self::$pending ? '' : ' hidden';
-			echo '<div class="notice notice-info ast-panel"' . esc_attr( $hidden ) . ' role="status" aria-live="polite">';
-			echo '<p><strong>' . esc_html__( 'Smoke test', 'axle-smoke-test' ) . '</strong> <span class="ast-panel-status">';
+			echo '<div class="notice notice-info axle-ui ast-panel"' . esc_attr( $hidden ) . ' role="status" aria-live="polite">';
+			echo '<p><strong>' . esc_html__( 'Smoke test', 'axle-smoke-test' ) . '</strong> <span class="spinner"></span><span class="ast-panel-status">';
 			echo self::$pending && 'waiting_browser' === self::$pending['status'] ? esc_html__( 'Waiting for a browser: checking your key pages in this one.', 'axle-smoke-test' ) : esc_html__( 'Checking your site after the change.', 'axle-smoke-test' );
 			echo '</span> <a class="ast-panel-link" href="' . esc_url( Page::url() ) . '" hidden>' . esc_html__( 'See the details', 'axle-smoke-test' ) . '</a></p>';
 			echo '</div>';

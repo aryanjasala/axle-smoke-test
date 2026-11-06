@@ -22,7 +22,7 @@
       "url": "/wp-admin/tools.php?page=axle-smoke-test",
       "steps": [
         {
-          "waitFor": ".ast-empty"
+          "waitFor": ".axle-empty"
         }
       ]
     },

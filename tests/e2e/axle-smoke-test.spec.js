@@ -72,10 +72,10 @@ test.describe.serial( 'Axle Smoke Test', () => {
 
 	test( 'Run now checks every key URL in both tiers and sets the baseline', async ( { page } ) => {
 		await page.goto( SCREEN );
-		await expect( page.getByRole( 'heading', { name: 'No runs yet' } ) ).toBeVisible();
+		await expect( page.locator( '.axle-empty' ) ).toContainText( 'No runs yet' );
 
 		const run = await runNow( page );
-		await expect( page.locator( '.ast-run-title .ast-badge' ) ).toHaveText( 'Green' );
+		await expect( page.locator( '.ast-run-title .axle-badge' ) ).toHaveText( 'Green' );
 		await expect( page.locator( '.ast-results tbody tr' ).first() ).toBeVisible();
 
 		expect( run.verdict ).toBe( 'green' );
