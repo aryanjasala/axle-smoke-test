@@ -128,3 +128,16 @@ if ( ! class_exists( 'WP_Theme' ) ) {
 
 defined( 'AryanX\Axle\SmokeTest\VERSION' ) || define( 'AryanX\Axle\SmokeTest\VERSION', '1.0.0' );
 defined( 'AryanX\Axle\SmokeTest\PLUGIN_FILE' ) || define( 'AryanX\Axle\SmokeTest\PLUGIN_FILE', WP_PLUGIN_DIR . '/axle-smoke-test/axle-smoke-test.php' );
+
+if ( ! function_exists( 'wc_get_page_permalink' ) ) {
+	/**
+	 * A WooCommerce page link, only while a test switches the shop on. Without
+	 * it the function answers with nothing, as the shop pages are skipped.
+	 *
+	 * @param string $page Page name.
+	 * @return string
+	 */
+	function wc_get_page_permalink( $page ) {
+		return empty( $GLOBALS['axle_smoke_test_shop'] ) ? '' : 'https://example.com/' . $page . '/';
+	}
+}

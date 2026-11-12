@@ -3,7 +3,7 @@
 <h1 align="center">Axle Smoke Test</h1>
 
 <p align="center">
-  <a href="https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/aryanjasala/axle-smoke-test/main/blueprint.json"><img src="https://img.shields.io/badge/Try%20in-WordPress%20Playground-3858e9?logo=wordpress&logoColor=white" alt="Try in WordPress Playground"></a>
+  <a href="https://try.axlewp.com/axle-smoke-test"><img src="https://img.shields.io/badge/Try%20in-WordPress%20Playground-3858e9?logo=wordpress&logoColor=white" alt="Try in WordPress Playground"></a>
   <a href="https://github.com/aryanjasala/axle-smoke-test/releases/latest"><img src="https://img.shields.io/github/v/release/aryanjasala/axle-smoke-test?label=release&color=2271b1" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/WordPress-6.6%2B-3858e9?logo=wordpress&logoColor=white" alt="WordPress 6.6+">
   <img src="https://img.shields.io/badge/PHP-7.4%2B-777bb4?logo=php&logoColor=white" alt="PHP 7.4+">
@@ -29,14 +29,17 @@ An update or a deploy breaks checkout, wp-admin or a page template, and the firs
 > [!NOTE]
 > Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
 >
-> Part of Axle by AryanX, a family of plugins for running WordPress sites safely.
+> Part of [Axle](https://axlewp.com/) by AryanX, a family of free plugins for running WordPress sites safely.
 
 ## Features
 
 - **Runs by itself** after plugin, theme, core and translation updates (manual or automatic), plugin installs and activations, theme switches and deploys (a five-minute code fingerprint check). Also on demand, from WP-CLI with an exit code for pipelines, the REST API and abilities
-- **Server checks** of each key URL: expected status, fatal errors (core's own scrape check), PHP warnings, the critical error page, blank pages, missing scripts and stylesheets, landmarks and text changes. wp-admin screens open as a signed-in admin with a single-use, 60-second login
+- **Server checks** of each key URL: expected status, fatal errors (core's own scrape check), PHP warnings, the critical error page, blank pages, missing scripts and stylesheets, a header, form or Add to cart button that went missing, your own must-contain rules, and text changes. wp-admin screens open as a signed-in admin with a single-use, 60-second login
 - **Browser checks** in a hidden frame of an admin's browser: JavaScript errors, failed files and images, and where the landmarks sit. Cron runs wait for the next admin page view
 - **Red, amber, green** against a baseline, with every error blamed on the plugin or theme it came from. Accept a run as the new baseline after a redesign
+- **Pages that are fine but empty**: each key URL learns a structure fingerprint (header, menu, footer, forms and where they post, Add to cart buttons, search and login forms, bucketed counts of links, images and buttons, the size of the text). A part that disappears turns the page red in plain words ("The page no longer has a form. It had 1."), big drops are amber, and each finding can be accepted on its own
+- **Page rules**: "must contain" and "must not contain" per URL, as text or a simple CSS selector, edited next to the URL. The browser also checks that a required element is visible
+- **Shops and multilingual sites**: WooCommerce shop, an in-stock product, cart, checkout and account pages come with rules for what they must render. WPML, Polylang and TranslatePress sites are offered each language's home page (and shop pages) with one click, never added silently
 - **Key URLs** picked from the site (home, latest post and page, a category, search, a 404, feed, REST API, login, dashboard, Plugins screen, WooCommerce pages) plus your own, each with its expected status
 - **Rollback**: every plugin and theme is zipped before its update. One click (or WP-CLI, or auto rollback, off by default) puts it back, clears OPcache and checks again. Version options that changed are listed, since the database is not undone
 - **Alerts** by email, webhook (JSON or Slack), admin notice and Site Health, rate-limited per page
@@ -55,7 +58,7 @@ Or with WP-CLI:
 wp plugin install https://github.com/aryanjasala/axle-smoke-test/releases/latest/download/axle-smoke-test.zip --activate
 ```
 
-Needs WordPress 6.6+ and PHP 7.4+. To try it first, the **Try in WordPress Playground** badge opens a throwaway WordPress in your browser with the plugin and some demo content.
+Needs WordPress 6.6+ and PHP 7.4+. To try it first, [try.axlewp.com/axle-smoke-test](https://try.axlewp.com/axle-smoke-test) opens a private WordPress in your browser with the latest release and some demo content. Nothing to install.
 
 ## Quick look
 
@@ -112,6 +115,9 @@ src/
 ├── Urls.php             key URLs
 ├── Checker.php          the server tier
 ├── Analyzer.php         HTML hash, text, landmarks, assets
+├── Structure.php        structure fingerprint, rules, findings
+├── Rules.php            per-URL rules, accepted findings
+├── Presets.php          shop and language pages
 ├── ErrorCollector.php   PHP errors during a loopback
 ├── DebugLog.php         new lines in debug.log
 ├── AdminSession.php     the single-use wp-admin login
@@ -143,17 +149,23 @@ tests/
 
 ## More free plugins
 
-Small plugins that each fill one gap in WordPress, all free with no pro version:
+Small plugins that each fill one gap in WordPress, all free with no pro version. Try them all together at [demo.axlewp.com](https://demo.axlewp.com/).
 
 | | Plugin | What it does |
 | --- | --- | --- |
-| <img src="https://raw.githubusercontent.com/aryanjasala/page-template-usage/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Page Template Usage](https://github.com/aryanjasala/page-template-usage) | See which template every page uses, and fix the pages on a missing template |
-| <img src="https://raw.githubusercontent.com/aryanjasala/staging-guard/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Staging Guard](https://github.com/aryanjasala/staging-guard) | Stops staging copies from emailing real people or getting indexed |
-| <img src="https://raw.githubusercontent.com/aryanjasala/category-tag-trash/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Category & Tag Trash](https://github.com/aryanjasala/category-tag-trash) | A trash for categories, tags and custom terms, with undo and full restore |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-page-template-usage/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Page Template Usage](https://github.com/aryanjasala/axle-page-template-usage) | See which template every page uses, and fix the pages on a missing template |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-staging-guard/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Staging Guard](https://github.com/aryanjasala/axle-staging-guard) | Stops staging copies from emailing real people, calling live APIs or getting indexed |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-category-tag-trash/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Category & Tag Trash](https://github.com/aryanjasala/axle-category-tag-trash) | A trash for categories, tags and custom terms, with undo and full restore |
 | <img src="https://raw.githubusercontent.com/aryanjasala/axle-read-only-mode/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Read-Only Mode](https://github.com/aryanjasala/axle-read-only-mode) | Read-only mode for WordPress during migrations and deploys |
-| <img src="https://raw.githubusercontent.com/aryanjasala/restore-blocks-from-revisions/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Restore Blocks from Revisions](https://github.com/aryanjasala/restore-blocks-from-revisions) | Restore a single block from an old revision, not the whole post |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-block-restore/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Block Restore](https://github.com/aryanjasala/axle-block-restore) | Restore a single block from an old revision, not the whole post |
 | <img src="https://raw.githubusercontent.com/aryanjasala/activity-log-with-undo/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Activity Log with Undo](https://github.com/aryanjasala/activity-log-with-undo) | An activity log where every change you can reverse has an Undo button |
 | <img src="https://raw.githubusercontent.com/aryanjasala/agent-governance/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Agent Governance](https://github.com/aryanjasala/agent-governance) | Hold risky AI agent calls for approval, preview what they change, and roll back a session |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-ai-guard/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle AI Guard](https://github.com/aryanjasala/axle-ai-guard) | See and control every AI call your plugins make: cost, data sent, budgets and a kill switch |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-config-sync/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Config Sync](https://github.com/aryanjasala/axle-config-sync) | Keep settings in git, diff them against the live site, apply with a preview and undo |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-leftovers/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Leftovers](https://github.com/aryanjasala/axle-leftovers) | Find what deleted plugins left behind, see who owns it and why, and clean it up with undo |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-license-tracker/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle License Tracker](https://github.com/aryanjasala/axle-license-tracker) | See which premium plugins are licensed, which lapsed and stopped getting updates, and what renews when |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-review/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Review](https://github.com/aryanjasala/axle-review) | Share drafts through private links and collect outside feedback as block Notes |
+| <img src="https://raw.githubusercontent.com/aryanjasala/axle-runtime-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Axle Runtime Doctor](https://github.com/aryanjasala/axle-runtime-doctor) | Check OPcache coverage, the object cache, PHP support and limits, cron and more, with the fix for your host |
 | <img src="https://raw.githubusercontent.com/aryanjasala/block-doctor/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Doctor](https://github.com/aryanjasala/block-doctor) | Scan the whole site for invalid and broken blocks and fix them in bulk, with undo |
 | <img src="https://raw.githubusercontent.com/aryanjasala/block-theme-ops/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Block Theme Ops](https://github.com/aryanjasala/block-theme-ops) | Find Site Editor changes that override your theme files, see the diff, reset them or send them to Git |
 | <img src="https://raw.githubusercontent.com/aryanjasala/role-right-sizer/main/.wordpress-org/icon-128x128.png" alt="" width="32"> | [Role Right-Sizer](https://github.com/aryanjasala/role-right-sizer) | Recommends the smallest role each user needs, from what they actually do |

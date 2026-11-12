@@ -91,7 +91,7 @@ final class Abilities implements Service {
 		$this->ability(
 			'run-smoke-test',
 			__( 'Run a smoke test', 'axle-smoke-test' ),
-			__( 'Checks the key URLs from the server now (status, fatal errors, PHP warnings, blank pages, missing files, landmarks) and returns the run with its verdict. Server tier only: JavaScript errors and layout need a browser, so they are not part of this run.', 'axle-smoke-test' ),
+			__( 'Checks the key URLs from the server now (status, fatal errors, PHP warnings, blank pages, missing files, a header, form or button that went missing, and the rules set on each URL) and returns the run with its verdict. Server tier only: JavaScript errors and layout need a browser, so they are not part of this run.', 'axle-smoke-test' ),
 			array(
 				'type'                 => 'object',
 				'properties'           => array(
@@ -194,6 +194,10 @@ final class Abilities implements Service {
 						),
 						'browser'  => array( 'type' => 'boolean' ),
 						'source'   => array( 'type' => 'string' ),
+						'rules'    => array(
+							'type'        => 'object',
+							'description' => 'The rules every run checks: must and must_not, lists of text or CSS selectors.',
+						),
 					),
 				),
 			),
@@ -272,6 +276,180 @@ final class Abilities implements Service {
 				'idempotent'  => false,
 			)
 		);
+
+		$rule_list = array(
+			'type'  => 'array',
+			'items' => array(
+				'type'      => 'string',
+				'maxLength' => 300,
+			),
+		);
+		$this->ability(
+			'set-url-rules',
+			__( 'Set the rules of a key URL', 'axle-smoke-test' ),
+			__( 'Replaces the "must contain" and "must not contain" rules of a key URL. A rule is plain text, or a simple CSS selector like .buy-button or form#contact. A page that breaks a rule turns red.', 'axle-smoke-test' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'key'      => array( 'type' => 'string' ),
+					'must'     => $rule_list,
+					'must_not' => $rule_list,
+				),
+				'required'             => array( 'key' ),
+				'additionalProperties' => false,
+			),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'must'     => $rule_list,
+					'must_not' => $rule_list,
+				),
+			),
+			array( $this, 'set_url_rules' ),
+			$can,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => true,
+			)
+		);
+
+		$this->ability(
+			'accept-finding',
+			__( 'Accept one finding', 'axle-smoke-test' ),
+			__( 'Accepts one finding of the structure check (for example that a form is gone) for a URL, because the change was intended. Later runs stop reporting it. Pass accept false to take it back.', 'axle-smoke-test' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'id'      => array(
+						'type'    => 'integer',
+						'minimum' => 1,
+					),
+					'url_key' => array( 'type' => 'string' ),
+					'sig'     => array(
+						'type'        => 'string',
+						'description' => __( 'The finding\'s sig, from the run\'s results.', 'axle-smoke-test' ),
+					),
+					'accept'  => array(
+						'type'    => 'boolean',
+						'default' => true,
+					),
+				),
+				'required'             => array( 'id', 'url_key', 'sig' ),
+				'additionalProperties' => false,
+			),
+			$run,
+			array( $this, 'accept_finding' ),
+			$can,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => true,
+			)
+		);
+
+		$this->ability(
+			'list-suggestions',
+			__( 'List suggested key URLs', 'axle-smoke-test' ),
+			__( 'Pages a shop or a multilingual site depends on that are not key URLs yet: shop, product, cart, checkout and account pages, and the home page of each language, with the rules each should meet.', 'axle-smoke-test' ),
+			array(),
+			array(
+				'type'  => 'array',
+				'items' => array( 'type' => 'object' ),
+			),
+			array( $this, 'list_suggestions' ),
+			$can,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'add-suggestions',
+			__( 'Add suggested key URLs', 'axle-smoke-test' ),
+			__( 'Adds suggested pages to the key URLs, with their rules. Pages are only rendered when checked: nothing is submitted or ordered.', 'axle-smoke-test' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'keys' => array(
+						'type'        => 'array',
+						'items'       => array( 'type' => 'string' ),
+						'description' => __( 'Only these suggestions (see list-suggestions). Empty for all.', 'axle-smoke-test' ),
+					),
+				),
+				'additionalProperties' => false,
+				'default'              => array(),
+			),
+			array(
+				'type'  => 'array',
+				'items' => array( 'type' => 'object' ),
+			),
+			array( $this, 'add_suggestions' ),
+			$can,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => false,
+			)
+		);
+	}
+
+	/**
+	 * Sets the rules of a key URL.
+	 *
+	 * @param array|null $input key, must, must_not.
+	 * @return array|\WP_Error
+	 */
+	public function set_url_rules( $input = null ) {
+		$input = (array) $input;
+
+		return $this->runner->urls()->set_rules(
+			sanitize_key( (string) ( $input['key'] ?? '' ) ),
+			array(
+				'must'     => (array) ( $input['must'] ?? array() ),
+				'must_not' => (array) ( $input['must_not'] ?? array() ),
+			)
+		);
+	}
+
+	/**
+	 * Accepts or restores a finding.
+	 *
+	 * @param array|null $input id, url_key, sig, accept.
+	 * @return array|\WP_Error
+	 */
+	public function accept_finding( $input = null ) {
+		$input = (array) $input;
+		$id    = (int) ( $input['id'] ?? 0 );
+		$key   = sanitize_key( (string) ( $input['url_key'] ?? '' ) );
+		$sig   = sanitize_text_field( (string) ( $input['sig'] ?? '' ) );
+		$run   = ( $input['accept'] ?? true ) ? $this->runner->accept_finding( $id, $key, $sig ) : $this->runner->restore_finding( $id, $key, $sig );
+		if ( is_wp_error( $run ) ) {
+			return $run;
+		}
+		$run['results'] = $this->runner->runs()->results( $id );
+
+		return $run;
+	}
+
+	/**
+	 * Suggested key URLs.
+	 *
+	 * @return array
+	 */
+	public function list_suggestions(): array {
+		return Presets::suggestions( $this->runner->urls() );
+	}
+
+	/**
+	 * Adds suggested key URLs.
+	 *
+	 * @param array|null $input keys.
+	 * @return array|\WP_Error
+	 */
+	public function add_suggestions( $input = null ) {
+		return Presets::add( $this->runner->urls(), array_map( 'sanitize_text_field', (array) ( ( (array) $input )['keys'] ?? array() ) ) );
 	}
 
 	/**

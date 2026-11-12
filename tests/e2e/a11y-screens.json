@@ -8,7 +8,7 @@
   ],
   "screens": [
     {
-      "name": "Tools > Smoke Test, no runs yet",
+      "name": "Tools > Smoke Test, first visit: empty list and the Get started card",
       "setup": [
         {
           "js": "seed.js",
@@ -23,6 +23,9 @@
       "steps": [
         {
           "waitFor": ".axle-empty"
+        },
+        {
+          "waitFor": ".ast-steps"
         }
       ]
     },
@@ -146,6 +149,161 @@
       "url": "/wp-admin/index.php",
       "include": [
         ".ast-alert-notice"
+      ]
+    },
+    {
+      "name": "A red run with a missing form: accept this change asks first",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.red}",
+      "steps": [
+        {
+          "waitFor": ".ast-reason .ast-accept"
+        },
+        {
+          "click": ".ast-reason .ast-accept"
+        },
+        {
+          "waitFor": ".ast-reason .axle-confirm"
+        }
+      ]
+    },
+    {
+      "name": "A red run: roll back asks first",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.red}",
+      "steps": [
+        {
+          "waitFor": ".ast-problems .ast-rollback"
+        },
+        {
+          "click": ".ast-problems .ast-rollback"
+        },
+        {
+          "waitFor": ".ast-problems .axle-confirm"
+        }
+      ]
+    },
+    {
+      "name": "An amber run: accept the baseline asks first",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.amber}",
+      "steps": [
+        {
+          "click": ".axle-actions .ast-confirm summary"
+        },
+        {
+          "waitFor": ".axle-actions .axle-confirm"
+        }
+      ]
+    },
+    {
+      "name": "Runs list filtered by verdict",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&verdict=red",
+      "steps": [
+        {
+          "waitFor": ".ast-runs"
+        }
+      ]
+    },
+    {
+      "name": "Settings with suggested pages",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "wp": [
+            "option",
+            "update",
+            "ast_fixture_languages",
+            "1"
+          ]
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&tab=settings",
+      "steps": [
+        {
+          "waitFor": "#ast-suggestions"
+        }
+      ],
+      "cleanup": [
+        {
+          "wp": [
+            "option",
+            "delete",
+            "ast_fixture_languages"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Settings with the rules of a URL open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&tab=settings",
+      "steps": [
+        {
+          "click": ".ast-urls .ast-rules summary"
+        },
+        {
+          "waitFor": ".ast-rules-form"
+        }
+      ]
+    },
+    {
+      "name": "Settings: removing a URL asks first",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "wp": [
+            "axle-smoke-test",
+            "urls",
+            "add",
+            "/old-landing/",
+            "--label=Old landing"
+          ]
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&tab=settings",
+      "steps": [
+        {
+          "click": ".ast-urls .ast-confirm summary"
+        },
+        {
+          "waitFor": ".ast-urls .axle-confirm"
+        }
       ]
     }
   ],

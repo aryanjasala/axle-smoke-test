@@ -212,6 +212,16 @@ class Checker {
 				if ( $status < 400 ) {
 					$result['missing_assets'] = $this->missing_assets( $signals['assets'], $args );
 				}
+				$structure = Structure::analyse( $body );
+				if ( $structure ) {
+					$result['meta']['structure'] = $structure;
+				}
+				if ( $status < 300 && ! empty( $url['rules'] ) ) {
+					$findings = Structure::check_rules( $body, (array) $url['rules'] );
+					if ( $findings ) {
+						$result['meta']['rule_findings'] = $findings;
+					}
+				}
 			}
 		} elseif ( $status >= 200 && $status < 300 ) {
 			$result['html_hash'] = hash( 'sha256', $body );

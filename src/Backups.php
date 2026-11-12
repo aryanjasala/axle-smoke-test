@@ -115,6 +115,12 @@ class Backups implements Service {
 			return new \WP_Error( 'axle_smoke_test_not_writable', __( 'The backups folder is not writable.', 'axle-smoke-test' ) );
 		}
 
+		// A zip is about as large as the folder. Without room for it, the zip would fill the disk and break the update that follows.
+		$free = function_exists( 'disk_free_space' ) ? @disk_free_space( self::dir() ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Hosts may block the function.
+		if ( false !== $free && $free < $size * 2 + 50 * MB_IN_BYTES ) {
+			return new \WP_Error( 'axle_smoke_test_no_space', __( 'There is not enough free disk space for a backup.', 'axle-smoke-test' ) );
+		}
+
 		$slug = sanitize_file_name( 'plugin' === $type ? (string) strtok( $item, '/' ) : $item );
 		$slug = (string) preg_replace( '/\.php$/', '', $slug );
 		$name = $slug . '-' . sanitize_file_name( '' !== $version ? $version : 'unknown' ) . '-' . gmdate( 'YmdHis' ) . '-' . wp_generate_password( 8, false ) . '.zip';
@@ -144,6 +150,7 @@ class Backups implements Service {
 		$index[] = $entry;
 		self::save( $index );
 		$this->prune( $type, $item );
+		self::enforce_total( (string) $entry['id'] );
 
 		/**
 		 * Fires after a plugin or theme was zipped before an update.
@@ -231,6 +238,53 @@ class Backups implements Service {
 			unset( $index[ $position ] );
 		}
 		self::save( $index );
+	}
+
+	/**
+	 * The most disk space all backups may use together.
+	 *
+	 * @return int Bytes.
+	 */
+	public static function total_max(): int {
+		/**
+		 * Filters the most disk space all backups may use together, in bytes. The oldest go first.
+		 *
+		 * @param int $bytes Default 500 MB. 0 keeps no backups at all.
+		 */
+		return Settings::filtered_int( 'backups_total_max_bytes', 500 * MB_IN_BYTES, 0, PHP_INT_MAX );
+	}
+
+	/**
+	 * Deletes the oldest backups until the rest fit the total limit. The newest one stays.
+	 *
+	 * @param string $keep_id ID of the backup just made.
+	 * @return int Backups deleted.
+	 */
+	public static function enforce_total( string $keep_id = '' ): int {
+		$max     = self::total_max();
+		$index   = self::all();
+		$total   = 0;
+		$deleted = 0;
+		foreach ( $index as $entry ) {
+			$total += (int) $entry['size'];
+		}
+		foreach ( $index as $position => $entry ) {
+			if ( $total <= $max ) {
+				break;
+			}
+			if ( (string) $entry['id'] === $keep_id ) {
+				continue;
+			}
+			wp_delete_file( self::path( $entry ) );
+			$total -= (int) $entry['size'];
+			unset( $index[ $position ] );
+			++$deleted;
+		}
+		if ( $deleted ) {
+			self::save( $index );
+		}
+
+		return $deleted;
 	}
 
 	/**

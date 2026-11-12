@@ -218,16 +218,25 @@ final class Verdict {
 		);
 		// A broken page loses its landmarks and text anyway: the red reason says it all.
 		if ( $baseline && $html && ! $broken ) {
-			$landmarks = (array) ( $result['landmarks'] ?? array() );
-			foreach ( (array) ( $baseline['landmarks'] ?? array() ) as $landmark => $count ) {
-				$now = (int) ( $landmarks[ $landmark ] ?? 0 );
-				if ( (int) $count > 0 && 0 === $now ) {
-					$reasons[] = self::reason(
-						self::AMBER,
-						'landmark',
-						/* translators: %s: landmark, like main or footer. */
-						sprintf( __( 'The page has no <%s> any more.', 'axle-smoke-test' ), (string) $landmark )
-					);
+			$structure_now  = (array) ( $meta['structure'] ?? array() );
+			$structure_then = (array) ( $base_meta['structure'] ?? array() );
+			if ( $structure_now && $structure_then ) {
+				foreach ( Structure::compare( $structure_now, $structure_then ) as $finding ) {
+					$reasons[] = self::reason( $finding['level'], $finding['code'], $finding['message'], '', $finding['sig'] );
+				}
+			} else {
+				// A baseline from before the structure check, or no DOM extension: count the tags.
+				$landmarks = (array) ( $result['landmarks'] ?? array() );
+				foreach ( (array) ( $baseline['landmarks'] ?? array() ) as $landmark => $count ) {
+					$now = (int) ( $landmarks[ $landmark ] ?? 0 );
+					if ( (int) $count > 0 && 0 === $now ) {
+						$reasons[] = self::reason(
+							self::AMBER,
+							'landmark',
+							/* translators: %s: landmark, like main or footer. */
+							sprintf( __( 'The page has no <%s> any more.', 'axle-smoke-test' ), (string) $landmark )
+						);
+					}
 				}
 			}
 
@@ -246,7 +255,50 @@ final class Verdict {
 			}
 		}
 
-		return $reasons;
+		// The person's own rules apply with or without a baseline.
+		foreach ( (array) ( $meta['rule_findings'] ?? array() ) as $finding ) {
+			$finding   = (array) $finding;
+			$reasons[] = self::reason( (string) ( $finding['level'] ?? self::RED ), (string) ( $finding['code'] ?? 'rule' ), (string) ( $finding['message'] ?? '' ), '', (string) ( $finding['sig'] ?? '' ), false );
+		}
+
+		return self::without_accepted( $reasons, (array) ( $meta['accepted'] ?? array() ) );
+	}
+
+	/**
+	 * Reasons without the findings a person accepted for this URL.
+	 *
+	 * @param array[]  $reasons  Reasons.
+	 * @param string[] $accepted Accepted signatures.
+	 * @return array[]
+	 */
+	private static function without_accepted( array $reasons, array $accepted ): array {
+		if ( ! $accepted ) {
+			return $reasons;
+		}
+
+		return array_values(
+			array_filter(
+				$reasons,
+				static function ( $reason ) use ( $accepted ) {
+					return empty( $reason['acceptable'] ) || ! in_array( $reason['sig'], $accepted, true );
+				}
+			)
+		);
+	}
+
+	/**
+	 * The reasons of a stored result after one finding was accepted or taken back.
+	 *
+	 * @param array[] $reasons Reasons.
+	 * @return string The worst level among them.
+	 */
+	public static function level_of( array $reasons ): string {
+		$verdict = self::GREEN;
+		foreach ( $reasons as $reason ) {
+			$verdict = self::worst( $verdict, (string) ( $reason['level'] ?? self::GREEN ) );
+		}
+
+		return $verdict;
 	}
 
 	/**
@@ -281,6 +333,33 @@ final class Verdict {
 		}
 
 		$reasons = array_merge( $reasons, self::missing_reasons( $result, $baseline ) );
+
+		// Elements a rule says must be on the page: in the DOM is not enough, a visitor must see them.
+		$layout = (array) ( $result['layout'] ?? array() );
+		foreach ( (array) ( $meta['must_selectors'] ?? array() ) as $selector ) {
+			$box = isset( $layout[ $selector ] ) ? (array) $layout[ $selector ] : null;
+			if ( ! $box ) {
+				$reasons[] = self::reason(
+					self::AMBER,
+					'rule_not_rendered',
+					/* translators: %s: CSS selector. */
+					sprintf( __( 'The browser did not find "%s" on the page.', 'axle-smoke-test' ), $selector ),
+					'',
+					'rule:browser:' . substr( md5( (string) $selector ), 0, 10 ),
+					false
+				);
+			} elseif ( empty( $box['visible'] ) ) {
+				$reasons[] = self::reason(
+					self::AMBER,
+					'rule_hidden',
+					/* translators: %s: CSS selector. */
+					sprintf( __( '"%s" is on the page but a visitor cannot see it.', 'axle-smoke-test' ), $selector ),
+					'',
+					'rule:hidden:' . substr( md5( (string) $selector ), 0, 10 ),
+					false
+				);
+			}
+		}
 
 		if ( $baseline ) {
 			foreach ( self::layout_changes( (array) ( $baseline['layout'] ?? array() ), (array) ( $result['layout'] ?? array() ), (int) $thresholds['layout'] ) as $change ) {
@@ -437,14 +516,23 @@ final class Verdict {
 	 * @param string $code    Machine-readable code.
 	 * @param string $message What happened.
 	 * @param string $source  plugin:<folder>, theme:<stylesheet>, core, or empty.
+	 * @param string $sig     A stable id for findings that can be accepted.
+	 * @param bool   $acceptable Whether the finding can be accepted.
 	 * @return array
 	 */
-	private static function reason( string $level, string $code, string $message, string $source = '' ): array {
-		return array(
+	private static function reason( string $level, string $code, string $message, string $source = '', string $sig = '', bool $acceptable = true ): array {
+		$reason = array(
 			'level'   => $level,
 			'code'    => $code,
 			'message' => $message,
 			'source'  => $source,
 		);
+		if ( '' !== $sig ) {
+			// A finding with a signature can be accepted for its URL. A rule is changed, not accepted.
+			$reason['sig']        = $sig;
+			$reason['acceptable'] = $acceptable;
+		}
+
+		return $reason;
 	}
 }

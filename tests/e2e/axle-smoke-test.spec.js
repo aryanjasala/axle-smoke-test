@@ -121,7 +121,11 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		await expect( page.locator( '.ast-change' ) ).toHaveText( 'Smoke Fixture 1.1 to 1.2' );
 		await expect( page.locator( '.ast-problems' ) ).toContainText( 'Smoke Fixture: ' );
 		await expect( page.locator( '.ast-problems' ) ).toContainText( 'smoke_fixture_db_version' );
-		await page.getByRole( 'button', { name: 'Roll back Smoke Fixture to 1.1' } ).click();
+		// Putting files back asks first, in place, and says it cannot be undone here.
+		await page.locator( 'summary', { hasText: 'Roll back Smoke Fixture to 1.1' } ).click();
+		await expect( page.locator( '.ast-problems .axle-confirm' ) ).toContainText( 'You cannot undo it here' );
+		await expect( page.locator( '.ast-problems .axle-confirm button' ).first() ).toBeFocused();
+		await page.locator( '.ast-problems .axle-confirm' ).getByRole( 'button', { name: 'Roll back Smoke Fixture' } ).click();
 		await expect( page.locator( '.notice-success' ).first() ).toContainText( 'Rolled back.' );
 		expect( fixtureVersion() ).toBe( '1.1' );
 
@@ -161,7 +165,7 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		settleRuns();
 
 		const run = await runNow( page );
-		expect( run.verdict ).toBe( 'amber' );
+		expect( run.verdict, problems( run ) ).toBe( 'amber' );
 		expect( results( run, 'server' ).every( ( item ) => item.verdict === 'green' ) ).toBe( true );
 		const home = result( run, 'home', 'browser' );
 		expect( home.verdict ).toBe( 'amber' );
@@ -202,7 +206,8 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		expect( home.meta.reasons.map( ( reason ) => reason.message ) ).toContain( 'Landmark main is gone or hidden.' );
 		expect( result( amber, 'home' ).verdict ).toBe( 'green' );
 
-		await page.getByRole( 'button', { name: 'Accept as baseline' } ).click();
+		await page.locator( 'summary', { hasText: 'Accept as baseline' } ).first().click();
+		await page.getByRole( 'button', { name: 'Replace the baseline' } ).first().click();
 		await expect( page.locator( '.notice-success' ) ).toContainText( 'Accepted as the new baseline' );
 		expect( getRun( amber.id ).results.every( ( item ) => item.is_baseline === 1 ) ).toBe( true );
 
@@ -250,9 +255,150 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		expect( run.results ).toHaveLength( 1 );
 		expect( run.results[ 0 ] ).toMatchObject( { http_status: 404, verdict: 'green' } );
 
-		await page.getByRole( 'button', { name: 'Remove Old landing page' } ).click();
+		// Removing asks first, in place, then offers Undo.
+		await page.locator( 'summary[aria-label="Remove Old landing page"]' ).click();
+		await expect( page.locator( '.axle-confirm' ) ).toContainText( 'You can undo it right after' );
+		await page.locator( '.ast-cancel' ).click();
+		await expect( page.locator( '.axle-confirm' ) ).toBeHidden();
+		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_urls', '--format=json' ) ) ).toHaveLength( 1 );
+
+		await page.locator( 'summary[aria-label="Remove Old landing page"]' ).click();
+		await page.getByRole( 'button', { name: 'Remove this URL' } ).click();
 		await expect( page.locator( '.notice-success' ) ).toContainText( 'URL removed.' );
 		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_urls', '--format=json' ) ) ).toEqual( [] );
+
+		await page.locator( '.notice-success' ).getByRole( 'button', { name: 'Undo' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'URL restored.' );
+		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_urls', '--format=json' ) )[ 0 ] ).toMatchObject( { label: 'Old landing page', expected: [ 404 ] } );
+		wp( 'option', 'delete', 'axle_smoke_test_urls' );
+	} );
+
+	test( 'a page that answers 200 but lost its form is red, says so in words, and the finding can be accepted and taken back', async ( { page } ) => {
+		settleRuns();
+		sql( "UPDATE wp_axle_smoke_results SET is_baseline = 0 WHERE url_key = 'home'" );
+		wp( 'option', 'update', 'ast_fixture_form', '1' );
+		wp( 'axle-smoke-test', 'run', '--urls=home' );
+		const first = getRun();
+		expect( first.verdict, problems( first ) ).toBe( 'green' );
+		expect( result( first, 'home' ).meta.structure.forms ).toMatchObject( { 'form:/contact/': 1 } );
+		expect( result( first, 'home' ).is_baseline ).toBe( 1 );
+
+		// The update "worked": status 200, nothing in the log, and the form is gone.
+		wp( 'option', 'update', 'ast_fixture_form', '0' );
+		expect( wpStatus( 'axle-smoke-test', 'run', '--urls=home' ).code ).toBe( 1 );
+		const red = getRun();
+		const home = result( red, 'home' );
+		expect( home.http_status ).toBe( 200 );
+		expect( home.verdict ).toBe( 'red' );
+		const finding = home.meta.reasons.find( ( reason ) => reason.code === 'structure_form' );
+		expect( finding.message ).toBe( 'The page no longer has a form that sends to /contact/. It had 1.' );
+		expect( finding.acceptable ).toBe( true );
+
+		await page.goto( `${ SCREEN }&run=${ red.id }` );
+		const reason = page.locator( '.ast-reason', { hasText: 'no longer has a form' } );
+		await expect( reason ).toBeVisible();
+		await reason.locator( 'summary' ).click();
+		await expect( reason.locator( '.axle-confirm' ) ).toContainText( 'Other findings still count' );
+		await reason.getByRole( 'button', { name: 'Accept this change' } ).last().click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Accepted. Later runs stop reporting this finding' );
+		expect( getRun( red.id ).results.find( ( item ) => item.url_key === 'home' ).verdict ).toBe( 'green' );
+		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_accepted', '--format=json' ) ) ).toEqual( [] );
+		expect( getRun( red.id ).results.find( ( item ) => item.url_key === 'home' ).is_baseline ).toBe( 1 );
+
+		await page.locator( '.notice-success' ).getByRole( 'button', { name: 'Undo' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Taken back' );
+		const back = getRun( red.id ).results.find( ( item ) => item.url_key === 'home' );
+		expect( back.verdict ).toBe( 'red' );
+		expect( back.is_baseline ).toBe( 0 );
+		expect( result( getRun( first.id ), 'home' ).is_baseline ).toBe( 1 );
+
+		// Accepted from WP-CLI too, and the next run stays green on the old baseline.
+		const sig = finding.sig;
+		expect( wpStatus( 'axle-smoke-test', 'findings', 'accept', String( red.id ), 'home', sig ).code ).toBe( 0 );
+		wp( 'axle-smoke-test', 'run', '--urls=home' );
+		expect( getRun().verdict ).toBe( 'green' );
+		wp( 'option', 'delete', 'ast_fixture_form' );
+		sql( "UPDATE wp_axle_smoke_results SET is_baseline = 0 WHERE url_key = 'home'" );
+	} );
+
+	test( 'rules: must contain and must not contain, set on the settings screen, turn a page red', async ( { page } ) => {
+		settleRuns();
+		wp( 'axle-smoke-test', 'run', '--urls=latest-page' );
+		expect( getRun().verdict ).toBe( 'green' );
+
+		await page.goto( `${ SCREEN }&tab=settings` );
+		const row = page.locator( 'tr[data-key="latest-page"]' );
+		await row.locator( '.ast-rules summary' ).click();
+		await row.getByLabel( 'Must contain' ).fill( 'We roast coffee in Pune\nmain' );
+		await row.getByLabel( 'Must not contain' ).fill( 'Zebra crossing' );
+		await row.getByRole( 'button', { name: 'Save rules' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Rules saved' );
+		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_rules', '--format=json' ) )[ 'latest-page' ] ).toEqual( { must: [ 'We roast coffee in Pune', 'main' ], must_not: [ 'Zebra crossing' ] } );
+		await expect( page.locator( 'tr[data-key="latest-page"] .ast-rules summary' ) ).toHaveText( '3 rules' );
+
+		wp( 'axle-smoke-test', 'run', '--urls=latest-page' );
+		expect( getRun().verdict ).toBe( 'green' );
+
+		// Rules apply from the very first run and join the same red flow.
+		wp( 'axle-smoke-test', 'rules', 'set', 'latest-page', '--must=We roast coffee in Pune|.nothing-like-this', '--must-not=Pune' );
+		expect( wpStatus( 'axle-smoke-test', 'run', '--urls=latest-page' ).code ).toBe( 1 );
+		const messages = result( getRun(), 'latest-page' ).meta.reasons.map( ( reason ) => reason.message );
+		expect( messages ).toContain( 'The page must contain ".nothing-like-this", but it does not.' );
+		expect( messages ).toContain( 'The page must not contain "Pune", but it does.' );
+		expect( result( getRun(), 'latest-page' ).meta.reasons.every( ( reason ) => reason.acceptable === false ) ).toBe( true );
+		expect( wp( 'axle-smoke-test', 'rules', 'list', '--format=count' ) ).toBe( '3' );
+
+		wp( 'axle-smoke-test', 'rules', 'clear', 'latest-page' );
+		wp( 'axle-smoke-test', 'run', '--urls=latest-page' );
+		expect( getRun().verdict ).toBe( 'green' );
+	} );
+
+	test( 'a multilingual site is offered each language home page, added with one click, never silently', async ( { page } ) => {
+		settleRuns();
+		expect( JSON.parse( wp( 'axle-smoke-test', 'suggestions', 'list', '--format=json' ) ) ).toEqual( [] );
+		wp( 'option', 'update', 'ast_fixture_languages', '1' );
+		expect( wpEval( 'echo count( (array) get_option( "axle_smoke_test_urls", array() ) );' ) ).toBe( '0' );
+
+		await page.goto( `${ SCREEN }&tab=settings` );
+		const card = page.locator( '#ast-suggestions' );
+		await expect( card ).toContainText( 'Home page (Deutsch)' );
+		await expect( card ).toContainText( 'nothing is submitted' );
+		await card.getByRole( 'button', { name: 'Add these pages' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Pages added' );
+		await expect( page.locator( '#ast-suggestions' ) ).toHaveCount( 0 );
+		await expect( page.locator( '.ast-urls' ) ).toContainText( 'Home page (Deutsch)' );
+
+		const saved = JSON.parse( wp( 'option', 'get', 'axle_smoke_test_urls', '--format=json' ) );
+		expect( saved ).toHaveLength( 1 );
+		expect( JSON.parse( wp( 'option', 'get', 'axle_smoke_test_rules', '--format=json' ) )[ saved[ 0 ].key ].must ).toEqual( [ 'header', 'footer' ] );
+
+		wp( 'axle-smoke-test', 'run', `--urls=${ saved[ 0 ].key }` );
+		const run = getRun();
+		expect( run.verdict, problems( run ) ).toBe( 'green' );
+		expect( result( run, saved[ 0 ].key ).meta.structure.landmarks ).toMatchObject( { header: 1, footer: 1 } );
+
+		wp( 'option', 'delete', 'ast_fixture_languages' );
+		wp( 'option', 'delete', 'axle_smoke_test_urls' );
+		wp( 'option', 'delete', 'axle_smoke_test_rules' );
+	} );
+
+	test( 'Get started: shown on a first visit, hidden for this user once dismissed', async ( { page } ) => {
+		resetRuns();
+		await page.goto( SCREEN );
+		const steps = page.locator( '.ast-steps' );
+		await expect( steps ).toContainText( 'Run the first check' );
+		await expect( steps.locator( '.axle-step' ) ).toHaveCount( 2 );
+		await steps.getByRole( 'button', { name: 'Hide these steps' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'steps are hidden' );
+		await expect( page.locator( '.ast-steps' ) ).toHaveCount( 0 );
+		expect( wpEval( 'echo get_user_meta( 1, "axle_smoke_test_steps_dismissed", true );' ) ).toBe( '1' );
+	} );
+
+	test( 'Site Health checks that the backups cannot be downloaded', () => {
+		settleRuns();
+		const out = JSON.parse( wpEval( '$t = ( new AryanX\\Axle\\SmokeTest\\Health\\SiteHealth( AryanX\\Axle\\SmokeTest\\Plugin::instance()->runner()->runs() ) )->backups_private(); echo wp_json_encode( array( $t["status"], count( AryanX\\Axle\\SmokeTest\\Backups::all() ) ) );' ) );
+		// Apache obeys the deny rules in the folder, so a download is refused.
+		expect( out[ 0 ] ).toBe( 'good' );
 	} );
 
 	test( 'settings: the webhook URL and basic-auth password are stored encrypted and never shown back', async ( { page } ) => {
@@ -351,6 +497,14 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		const accepted = await client.call( 'POST', '/wp-abilities/v1/abilities/axle-smoke-test/accept-baseline/run', { input: { id: run.body.id, url_key: 'rest' } } );
 		expect( accepted.body ).toEqual( { accepted: 1 } );
 		expect( sql( `SELECT is_baseline FROM wp_axle_smoke_results WHERE run_id = ${ run.body.id } AND url_key = 'rest'` ).trim() ).toBe( '1' );
+
+		const ruled = await client.call( 'POST', '/wp-abilities/v1/abilities/axle-smoke-test/set-url-rules/run', { input: { key: 'home', must: [ 'header' ], must_not: [ 'Fatal error' ] } } );
+		expect( ruled.body ).toEqual( { must: [ 'header' ], must_not: [ 'Fatal error' ] } );
+		const listed = await client.call( 'GET', '/wp-abilities/v1/abilities/axle-smoke-test/list-urls/run' );
+		expect( listed.body.find( ( url ) => url.key === 'home' ).rules.must ).toEqual( [ 'header' ] );
+		const rest = await client.call( 'POST', '/axle-smoke-test/v1/urls/home/rules', { must: [], must_not: [] } );
+		expect( rest.body ).toEqual( { must: [], must_not: [] } );
+		expect( ( await client.call( 'GET', '/wp-abilities/v1/abilities/axle-smoke-test/list-suggestions/run' ) ).body ).toEqual( [] );
 
 		const annotations = await client.call( 'GET', '/wp-abilities/v1/abilities/axle-smoke-test/rollback-update' );
 		expect( annotations.body.meta.annotations ).toMatchObject( { destructive: true, readonly: false } );

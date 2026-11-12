@@ -80,3 +80,49 @@
 .ast-alert-notice .ast-inline-form {
 	margin: 0 0 8px;
 }
+
+/* In-place confirm steps and rules: a details element used as a button. */
+.ast-confirm {
+	display: inline-block;
+	margin: 0 4px 4px 0;
+}
+
+.ast-confirm > summary,
+.ast-rules > summary {
+	cursor: pointer;
+	display: inline-block;
+}
+
+.ast-confirm > summary::-webkit-details-marker {
+	display: none;
+}
+
+.ast-confirm[open] {
+	display: block;
+}
+
+.ast-confirm .axle-confirm {
+	margin: 8px 0;
+	max-width: 520px;
+}
+
+.ast-reason .ast-confirm {
+	margin-left: 4px;
+}
+
+.ast-rules-form {
+	min-width: 240px;
+}
+
+.ast-filter {
+	display: inline-block;
+	margin: 0;
+}
+
+.ast-steps .axle-card__head form {
+	margin: 0;
+}
+
+.ast-undo {
+	margin-left: 4px;
+}

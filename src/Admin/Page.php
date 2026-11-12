@@ -9,6 +9,8 @@ namespace AryanX\Axle\SmokeTest\Admin;
 
 use AryanX\Axle\SmokeTest\Backups;
 use AryanX\Axle\SmokeTest\Family;
+use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\Rules;
 use AryanX\Axle\SmokeTest\MuPlugin;
 use AryanX\Axle\SmokeTest\Rollback;
 use AryanX\Axle\SmokeTest\Runner;
@@ -30,7 +32,10 @@ final class Page implements Service {
 
 	public const SLUG = 'axle-smoke-test';
 
-	private const ACTIONS = array( 'save_settings', 'add_url', 'remove_url', 'baseline', 'rollback', 'run', 'mu_plugin', 'dismiss' );
+	private const ACTIONS = array( 'save_settings', 'add_url', 'remove_url', 'baseline', 'rollback', 'run', 'mu_plugin', 'dismiss', 'save_rules', 'accept_finding', 'add_suggestions', 'dismiss_steps', 'undo' );
+
+	/** The user meta that hides the Get started card. */
+	public const STEPS_META = 'axle_smoke_test_steps_dismissed';
 
 	/**
 	 * Settings.
@@ -106,6 +111,39 @@ final class Page implements Service {
 			self::SLUG,
 			array( $this, 'render' )
 		);
+		if ( '' !== $this->hook ) {
+			add_action( 'load-' . $this->hook, array( $this, 'help' ) );
+		}
+	}
+
+	/**
+	 * The Help tab: what the screen is for, and one short tab for each job it does.
+	 */
+	public function help(): void {
+		AxleUi::help_tabs(
+			array(
+				array(
+					'id'      => 'overview',
+					'title'   => __( 'Overview', 'axle-smoke-test' ),
+					'content' => '<p>' . esc_html__( 'Smoke Test checks your key pages after every update, theme switch or deploy. It compares each page with how it looked when it last passed, and tells you what broke and which plugin or theme probably did it.', 'axle-smoke-test' ) . '</p><p>' . esc_html__( 'Red means something is broken. Amber means a page changed in a way worth a look. Green means the page looks as it did.', 'axle-smoke-test' ) . '</p>',
+				),
+				array(
+					'id'      => 'structure',
+					'title'   => __( 'Missing parts', 'axle-smoke-test' ),
+					'content' => '<p>' . esc_html__( 'A page can answer "200 OK" and still be empty. Smoke Test learns what each page is made of: its header, menu, footer, forms and Add to cart buttons. When one of them goes missing, the page turns red and says what is gone.', 'axle-smoke-test' ) . '</p><p>' . esc_html__( 'If the change was meant, press Accept next to that finding. Later runs stop reporting it.', 'axle-smoke-test' ) . '</p>',
+				),
+				array(
+					'id'      => 'rules',
+					'title'   => __( 'Page rules', 'axle-smoke-test' ),
+					'content' => '<p>' . esc_html__( 'Under Settings, each key URL can have rules. "Must contain" and "must not contain" take plain text, or a simple CSS selector such as .buy-button or form#contact. Put one rule on each line.', 'axle-smoke-test' ) . '</p><p>' . esc_html__( 'A page that breaks a rule turns red, even on the first run.', 'axle-smoke-test' ) . '</p>',
+				),
+				array(
+					'id'      => 'rollback',
+					'title'   => __( 'Rolling back', 'axle-smoke-test' ),
+					'content' => '<p>' . esc_html__( 'Before a plugin or theme is updated, its folder is zipped. When a run turns red after an update, you can put the old files back from that zip and the smoke test runs again.', 'axle-smoke-test' ) . '</p><p>' . esc_html__( 'Database changes made by the update stay. The run lists the version options that changed so you know.', 'axle-smoke-test' ) . '</p>',
+				),
+			)
+		);
 	}
 
 	/**
@@ -134,6 +172,7 @@ final class Page implements Service {
 		}
 		AxleUi::enqueue();
 		wp_enqueue_style( 'axle-smoke-test-admin' );
+		wp_enqueue_script( 'axle-smoke-test-admin', plugins_url( 'assets/admin.js', PLUGIN_FILE ), array( 'wp-a11y' ), VERSION, true );
 	}
 
 	/**
@@ -188,21 +227,77 @@ final class Page implements Service {
 		$error = isset( $_GET['error'] ) ? sanitize_text_field( rawurldecode( (string) wp_unslash( $_GET['error'] ) ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitised after decoding.
 		// phpcs:enable
 		$messages = array(
-			'saved'        => __( 'Settings saved.', 'axle-smoke-test' ),
-			'url_added'    => __( 'URL added.', 'axle-smoke-test' ),
-			'url_removed'  => __( 'URL removed.', 'axle-smoke-test' ),
-			'baseline'     => __( 'Accepted as the new baseline. The next run compares against it.', 'axle-smoke-test' ),
-			'rolled_back'  => __( 'Rolled back. The smoke test ran again: see the new run below.', 'axle-smoke-test' ),
-			'ran'          => __( 'Smoke test finished.', 'axle-smoke-test' ),
-			'mu_installed' => __( 'Early collector installed in wp-content/mu-plugins.', 'axle-smoke-test' ),
-			'mu_removed'   => __( 'Early collector removed.', 'axle-smoke-test' ),
+			'saved'            => __( 'Settings saved.', 'axle-smoke-test' ),
+			'url_added'        => __( 'URL added.', 'axle-smoke-test' ),
+			'url_removed'      => __( 'URL removed.', 'axle-smoke-test' ),
+			'baseline'         => __( 'Accepted as the new baseline. The next run compares against it.', 'axle-smoke-test' ),
+			'rolled_back'      => __( 'Rolled back. The smoke test ran again: see the new run below.', 'axle-smoke-test' ),
+			'ran'              => __( 'Smoke test finished.', 'axle-smoke-test' ),
+			'mu_installed'     => __( 'Early collector installed in wp-content/mu-plugins.', 'axle-smoke-test' ),
+			'mu_removed'       => __( 'Early collector removed.', 'axle-smoke-test' ),
+			'rules_saved'      => __( 'Rules saved. They apply from the next run.', 'axle-smoke-test' ),
+			'finding_accepted' => __( 'Accepted. Later runs stop reporting this finding for this page.', 'axle-smoke-test' ),
+			'finding_restored' => __( 'Taken back. Later runs report this finding again.', 'axle-smoke-test' ),
+			'url_restored'     => __( 'URL restored.', 'axle-smoke-test' ),
+			'suggestions'      => __( 'Pages added. Run now to set their baseline.', 'axle-smoke-test' ),
+			'steps_dismissed'  => __( 'The Get started steps are hidden.', 'axle-smoke-test' ),
 		);
 		if ( isset( $messages[ $done ] ) ) {
-			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $messages[ $done ] ) . '</p></div>';
+			$undo = '';
+			if ( in_array( $done, array( 'url_removed', 'finding_accepted' ), true ) && self::undo_pending() ) {
+				ob_start();
+				self::post_button( 'undo', __( 'Undo', 'axle-smoke-test' ), array(), 'button-link ast-undo' );
+				$undo = ' ' . ob_get_clean();
+			}
+			echo '<div class="notice notice-success is-dismissible ast-notice" data-speak="' . esc_attr( $messages[ $done ] ) . '"><p>' . esc_html( $messages[ $done ] ) . wp_kses( $undo, self::form_html() ) . '</p></div>';
 		}
 		if ( '' !== $error ) {
-			echo '<div class="notice notice-error"><p>' . esc_html( $error ) . '</p></div>';
+			echo '<div class="notice notice-error ast-notice" data-speak="' . esc_attr( $error ) . '"><p>' . esc_html( $error ) . '</p></div>';
 		}
+	}
+
+	/**
+	 * The tags a post_button() needs, for wp_kses().
+	 *
+	 * @return array
+	 */
+	private static function form_html(): array {
+		return array(
+			'form'   => array(
+				'method' => true,
+				'action' => true,
+				'class'  => true,
+			),
+			'input'  => array(
+				'type'  => true,
+				'name'  => true,
+				'value' => true,
+				'id'    => true,
+			),
+			'button' => array(
+				'type'       => true,
+				'class'      => true,
+				'aria-label' => true,
+			),
+		);
+	}
+
+	/**
+	 * Remembers what the Undo link would bring back, for ten minutes.
+	 *
+	 * @param array $undo type (url or finding) and what is needed to restore it.
+	 */
+	private static function remember_undo( array $undo ): void {
+		set_transient( 'axle_smoke_test_undo_' . get_current_user_id(), $undo, 10 * MINUTE_IN_SECONDS );
+	}
+
+	/**
+	 * Whether the current user has something to undo.
+	 *
+	 * @return bool
+	 */
+	private static function undo_pending(): bool {
+		return is_array( get_transient( 'axle_smoke_test_undo_' . get_current_user_id() ) );
 	}
 
 	/**
@@ -212,18 +307,39 @@ final class Page implements Service {
 		$runs   = $this->runner->runs();
 		$latest = $runs->latest();
 
-		echo '<div class="axle-actions ast-toolbar">';
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only filters the list.
+		$filter = isset( $_GET['verdict'] ) && in_array( $_GET['verdict'], array( 'red', 'amber', 'green' ), true ) ? sanitize_key( wp_unslash( $_GET['verdict'] ) ) : '';
+
+		$this->steps();
+
+		echo '<div class="axle-toolbar ast-toolbar">';
+		echo '<form method="get" action="' . esc_url( admin_url( 'tools.php' ) ) . '" class="ast-filter">';
+		echo '<input type="hidden" name="page" value="' . esc_attr( self::SLUG ) . '">';
+		echo '<label for="ast-verdict" class="screen-reader-text">' . esc_html__( 'Show runs with this verdict', 'axle-smoke-test' ) . '</label>';
+		echo '<select id="ast-verdict" name="verdict">';
+		foreach ( array(
+			''      => __( 'All verdicts', 'axle-smoke-test' ),
+			'red'   => __( 'Red', 'axle-smoke-test' ),
+			'amber' => __( 'Amber', 'axle-smoke-test' ),
+			'green' => __( 'Green', 'axle-smoke-test' ),
+		) as $value => $label ) {
+			printf( '<option value="%1$s"%2$s>%3$s</option>', esc_attr( $value ), selected( $filter, $value, false ), esc_html( $label ) );
+		}
+		echo '</select> <button type="submit" class="button">' . esc_html__( 'Filter runs', 'axle-smoke-test' ) . '</button>';
+		echo '</form>';
+		echo '<span class="axle-toolbar__end">';
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
 		wp_nonce_field( 'axle_smoke_test_run' );
 		echo '<input type="hidden" name="action" value="axle_smoke_test_run">';
-		echo '<button type="submit" class="button button-primary ast-run-now">' . esc_html__( 'Run now', 'axle-smoke-test' ) . '</button>';
+		echo '<button type="submit" id="ast-run-now" class="button button-primary ast-run-now">' . esc_html__( 'Run now', 'axle-smoke-test' ) . '</button>';
 		echo '</form>';
-		echo '<p class="description">' . esc_html__( 'Checks every key URL from the server, then in this browser.', 'axle-smoke-test' ) . '</p>';
+		echo '</span>';
 		echo '</div>';
-		echo '<div class="notice notice-info inline ast-run-box ast-panel-inline" role="status" aria-live="polite" hidden><p><span class="spinner"></span><span class="ast-panel-status"></span></p></div>';
+		echo '<p class="description">' . esc_html__( 'Run now checks every key URL from the server, then in this browser.', 'axle-smoke-test' ) . '</p>';
+		echo '<div class="notice notice-info inline ast-run-box ast-panel-inline" role="status" aria-live="polite" aria-busy="false" hidden><p><span class="spinner"></span><span class="ast-panel-status"></span></p></div>';
 
 		if ( ! $latest ) {
-			echo '<div class="axle-empty"><p>' . esc_html__( 'No runs yet. A run starts by itself after every plugin, theme or core update, theme switch, plugin activation or deploy. Or press Run now to check your key pages and set the first baseline.', 'axle-smoke-test' ) . '</p></div>';
+			echo '<div class="axle-empty"><p>' . esc_html__( 'No runs yet. Each run shows here with its verdict: red, amber or green. A run starts by itself after every plugin, theme or core update, theme switch, plugin activation or deploy. To set the first baseline now, press Run now.', 'axle-smoke-test' ) . '</p><p><a class="button" href="' . esc_url( self::url( array( 'tab' => 'settings' ) ) ) . '">' . esc_html__( 'Choose the pages to check', 'axle-smoke-test' ) . '</a></p></div>';
 			return;
 		}
 
@@ -231,15 +347,21 @@ final class Page implements Service {
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Pagination.
 		$paged = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
+		$query = '' !== $filter ? array( 'verdict' => $filter ) : array();
 		$list  = $runs->list(
-			array(
+			$query + array(
 				'per_page' => 20,
 				'page'     => $paged,
 			)
 		);
-		$total = $runs->count();
+		$total = $runs->count( $query );
 
 		echo '<h2 class="axle-card__title">' . esc_html__( 'All runs', 'axle-smoke-test' ) . '</h2>';
+		if ( ! $list ) {
+			echo '<div class="axle-empty"><p>' . esc_html__( 'No run has this verdict. Pick another verdict to see the rest.', 'axle-smoke-test' ) . '</p></div>';
+			return;
+		}
+		echo '<div class="axle-scroll" tabindex="0" role="region" aria-label="' . esc_attr__( 'All runs', 'axle-smoke-test' ) . '">';
 		echo '<table class="widefat striped ast-runs"><thead><tr>';
 		foreach ( array( __( 'Run', 'axle-smoke-test' ), __( 'Started', 'axle-smoke-test' ), __( 'Trigger', 'axle-smoke-test' ), __( 'Change', 'axle-smoke-test' ), __( 'Verdict', 'axle-smoke-test' ), __( 'Red / amber / green', 'axle-smoke-test' ), __( 'Duration', 'axle-smoke-test' ) ) as $column ) {
 			echo '<th scope="col">' . esc_html( $column ) . '</th>';
@@ -258,7 +380,7 @@ final class Page implements Service {
 			echo '<td>' . esc_html( Display::duration( (int) ( $run['context']['duration_ms'] ?? 0 ) ) ) . '</td>';
 			echo '</tr>';
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table></div>';
 
 		$pages = (int) ceil( $total / 20 );
 		if ( $pages > 1 ) {
@@ -266,7 +388,7 @@ final class Page implements Service {
 			echo wp_kses_post(
 				(string) paginate_links(
 					array(
-						'base'    => add_query_arg( 'paged', '%#%', self::url() ),
+						'base'    => add_query_arg( 'paged', '%#%', self::url( $query ) ),
 						'format'  => '',
 						'current' => $paged,
 						'total'   => $pages,
@@ -275,6 +397,67 @@ final class Page implements Service {
 			);
 			echo '</div></div>';
 		}
+	}
+
+	/**
+	 * The "Get started" card, until every step is done or the user hides it.
+	 */
+	private function steps(): void {
+		if ( get_user_meta( get_current_user_id(), self::STEPS_META, true ) ) {
+			return;
+		}
+
+		$suggestions = Presets::suggestions( $this->runner->urls() );
+		$steps       = array(
+			array(
+				'title' => __( 'Run the first check', 'axle-smoke-test' ),
+				'text'  => __( 'It visits your key pages and saves how they look. Later runs are compared with that.', 'axle-smoke-test' ),
+				'done'  => null !== $this->runner->runs()->latest_finished(),
+				'link'  => '#ast-run-now',
+				'label' => __( 'Go to Run now', 'axle-smoke-test' ),
+			),
+		);
+		if ( $suggestions ) {
+			$steps[] = array(
+				'title' => __( 'Add the pages your site depends on', 'axle-smoke-test' ),
+				'text'  => __( 'Shop, cart and checkout pages, or the home page of each language, are not checked yet.', 'axle-smoke-test' ),
+				'done'  => false,
+				'link'  => self::url( array( 'tab' => 'settings' ) ) . '#ast-suggestions',
+				'label' => __( 'See the pages', 'axle-smoke-test' ),
+			);
+		}
+		$steps[] = array(
+			'title' => __( 'Choose who hears about problems', 'axle-smoke-test' ),
+			'text'  => __( 'By default a red run emails the site admin. Add addresses or a webhook, or switch alerts off.', 'axle-smoke-test' ),
+			'done'  => false !== get_option( Settings::OPTION, false ),
+			'link'  => self::url( array( 'tab' => 'settings' ) ) . '#ast-alerts',
+			'label' => __( 'Open the alert settings', 'axle-smoke-test' ),
+		);
+
+		/**
+		 * Filters the steps of the Get started card.
+		 *
+		 * @param array[] $steps Each: title, text, done (bool), link, label.
+		 */
+		$steps = (array) apply_filters( 'axle_smoke_test_get_started_steps', $steps );
+		if ( ! array_filter( $steps, static fn( $step ) => empty( $step['done'] ) ) ) {
+			return;
+		}
+
+		echo '<section class="axle-card ast-steps" aria-labelledby="ast-steps-title">';
+		echo '<div class="axle-card__head"><h2 class="axle-card__title" id="ast-steps-title">' . esc_html__( 'Get started', 'axle-smoke-test' ) . '</h2>';
+		self::post_button( 'dismiss_steps', __( 'Hide these steps', 'axle-smoke-test' ), array(), 'button-link' );
+		echo '</div><ol class="axle-steps">';
+		foreach ( $steps as $step ) {
+			echo '<li class="axle-step"><div class="axle-step__body"><strong class="axle-step__title">' . esc_html( (string) ( $step['title'] ?? '' ) ) . '</strong><p>' . esc_html( (string) ( $step['text'] ?? '' ) ) . '</p></div>';
+			if ( ! empty( $step['done'] ) ) {
+				echo '<span class="axle-badge axle-badge--good">' . esc_html__( 'Done', 'axle-smoke-test' ) . '</span>';
+			} else {
+				echo '<a class="button" href="' . esc_url( (string) ( $step['link'] ?? '#' ) ) . '">' . esc_html( (string) ( $step['label'] ?? '' ) ) . '</a>';
+			}
+			echo '</li>';
+		}
+		echo '</ol></section>';
 	}
 
 	/**
@@ -390,7 +573,13 @@ final class Page implements Service {
 
 		echo '<div class="axle-actions">';
 		if ( $results ) {
-			$this->post_button( 'baseline', __( 'Accept as baseline', 'axle-smoke-test' ), array( 'run' => $run_id ), 'button' );
+			self::confirm_button(
+				'baseline',
+				__( 'Accept as baseline', 'axle-smoke-test' ),
+				array( 'run' => $run_id ),
+				__( 'Every page in this run becomes the baseline that later runs are compared with, in place of the old one. Use it when the changes were meant. You cannot undo it, but the next green run sets a new baseline.', 'axle-smoke-test' ),
+				__( 'Replace the baseline', 'axle-smoke-test' )
+			);
 		}
 		$report = add_query_arg( '_wpnonce', wp_create_nonce( 'wp_rest' ), rest_url( 'axle-smoke-test/v1/runs/' . $run_id . '/report' ) );
 		echo '<a class="button" href="' . esc_url( $report ) . '" download="smoke-test-' . (int) $run_id . '.json">' . esc_html__( 'Download report (JSON)', 'axle-smoke-test' ) . '</a>';
@@ -452,11 +641,11 @@ final class Page implements Service {
 			if ( in_array( $candidate['id'], $rolled, true ) ) {
 				continue;
 			}
-			echo '<p class="description">' . esc_html(
-				/* translators: 1: plugin or theme name, 2: version. */
-				sprintf( __( 'Puts the files of %1$s back to version %2$s and runs the smoke test again. Database changes made by the update stay. You can update again later.', 'axle-smoke-test' ), $candidate['name'], $candidate['version'] )
-			) . '</p>';
-			$this->post_button(
+			if ( ! Rollback::may_roll_back( $candidate, get_current_user_id() ) ) {
+				echo '<p class="description">' . esc_html__( 'You are not allowed to change this plugin or theme, so you cannot roll it back.', 'axle-smoke-test' ) . '</p>';
+				continue;
+			}
+			self::confirm_button(
 				'rollback',
 				/* translators: 1: plugin or theme name, 2: version. */
 				sprintf( __( 'Roll back %1$s to %2$s', 'axle-smoke-test' ), $candidate['name'], $candidate['version'] ),
@@ -464,6 +653,10 @@ final class Page implements Service {
 					'run'  => (int) $run['id'],
 					'item' => $candidate['id'],
 				),
+				/* translators: 1: plugin or theme name, 2: version now, 3: version it goes back to. */
+				sprintf( __( 'This replaces the files of %1$s (version %2$s) with the saved copy of version %3$s, then runs the smoke test again. Changes the update made to the database stay. You cannot undo it here, but you can update again later.', 'axle-smoke-test' ), $candidate['name'], $candidate['current'], $candidate['version'] ),
+				/* translators: %s: plugin or theme name. */
+				sprintf( __( 'Roll back %s', 'axle-smoke-test' ), $candidate['name'] ),
 				$first ? 'button button-primary ast-rollback' : 'button ast-rollback'
 			);
 			$first    = false;
@@ -511,6 +704,7 @@ final class Page implements Service {
 		);
 
 		echo '<h2 class="axle-card__title">' . esc_html__( 'Results', 'axle-smoke-test' ) . '</h2>';
+		echo '<div class="axle-scroll" tabindex="0" role="region" aria-label="' . esc_attr__( 'Results', 'axle-smoke-test' ) . '">';
 		echo '<table class="widefat striped ast-results"><thead><tr>';
 		foreach ( array( __( 'Page', 'axle-smoke-test' ), __( 'Tier', 'axle-smoke-test' ), __( 'Verdict', 'axle-smoke-test' ), __( 'Status before and after', 'axle-smoke-test' ), __( 'Time', 'axle-smoke-test' ), __( 'What changed', 'axle-smoke-test' ), __( 'Baseline', 'axle-smoke-test' ) ) as $column ) {
 			echo '<th scope="col">' . esc_html( $column ) . '</th>';
@@ -528,7 +722,12 @@ final class Page implements Service {
 			echo '<td>' . Display::badge( (string) $result['verdict'] ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 			if ( 'server' === $result['tier'] ) {
 				$before = isset( $meta['baseline_status'] ) ? (string) (int) $meta['baseline_status'] : '-';
-				echo '<td>' . esc_html( $before . ' > ' . ( $result['http_status'] ? (string) $result['http_status'] : '-' ) ) . '</td>';
+				$after  = $result['http_status'] ? (string) $result['http_status'] : '-';
+				if ( $before === $after ) {
+					echo '<td>' . esc_html( $after ) . '</td>';
+				} else {
+					echo '<td><div class="axle-diff"><del><span class="screen-reader-text">' . esc_html__( 'Before:', 'axle-smoke-test' ) . '</span> ' . esc_html( $before ) . '</del><ins><span class="screen-reader-text">' . esc_html__( 'After:', 'axle-smoke-test' ) . '</span> ' . esc_html( $after ) . '</ins></div></td>';
+				}
 				echo '<td>' . esc_html( Display::duration( (int) $result['ttfb_ms'] ) ) . '</td>';
 			} else {
 				echo '<td>-</td><td>' . esc_html( Display::duration( (int) ( $meta['load_ms'] ?? 0 ) ) ) . '</td>';
@@ -539,7 +738,24 @@ final class Page implements Service {
 				echo '<ul class="ast-reasons">';
 				foreach ( $reasons as $reason ) {
 					$source = ! empty( $reason['source'] ) && 'unknown' !== $reason['source'] ? ' (' . Display::source( (string) $reason['source'] ) . ')' : '';
-					echo '<li class="ast-reason">' . Display::badge( (string) $reason['level'] ) . ' ' . esc_html( (string) $reason['message'] . $source ) . '</li>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+					echo '<li class="ast-reason">' . Display::badge( (string) $reason['level'] ) . ' ' . esc_html( (string) $reason['message'] . $source ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+					if ( ! empty( $reason['acceptable'] ) && ! empty( $reason['sig'] ) ) {
+						self::confirm_button(
+							'accept_finding',
+							__( 'Accept this change', 'axle-smoke-test' ),
+							array(
+								'run'     => (int) $run['id'],
+								'url_key' => (string) $result['url_key'],
+								'sig'     => (string) $reason['sig'],
+							),
+							__( 'Later runs stop reporting this finding for this page, because the change was meant. Other findings still count. You can undo it right after.', 'axle-smoke-test' ),
+							__( 'Accept this change', 'axle-smoke-test' ),
+							'button-link ast-accept',
+							/* translators: %s: page label. */
+							sprintf( __( 'Accept this change on %s', 'axle-smoke-test' ), $label )
+						);
+					}
+					echo '</li>';
 				}
 				echo '</ul>';
 			} elseif ( ! empty( $meta['compared_with'] ) ) {
@@ -558,24 +774,55 @@ final class Page implements Service {
 			if ( $result['is_baseline'] ) {
 				echo esc_html__( 'Baseline', 'axle-smoke-test' );
 			} else {
-				/* translators: %s: page label. */
-				$this->post_button(
+				self::confirm_button(
 					'baseline',
 					__( 'Accept', 'axle-smoke-test' ),
 					array(
 						'run'     => (int) $run['id'],
 						'url_key' => (string) $result['url_key'],
 					),
+					__( 'This page, as it is in this run, becomes its baseline in place of the old one. You cannot undo it, but the next green run sets a new baseline.', 'axle-smoke-test' ),
+					__( 'Replace the baseline', 'axle-smoke-test' ),
 					'button button-small',
 					/* translators: %s: page label. */
-					sprintf( __( 'Accept %s as baseline', 'axle-smoke-test' ), $label ) 
+					sprintf( __( 'Accept %s as baseline', 'axle-smoke-test' ), $label )
 				);
 			}
 			echo '</td>';
 			echo '</tr>';
 		}
 
-		echo '</tbody></table>';
+		echo '</tbody></table></div>';
+	}
+
+	/**
+	 * A button that first asks, in place, what will change and whether it can be undone.
+	 * It is a details element, so it works without JavaScript; admin.js moves focus into
+	 * the question and back.
+	 *
+	 * @param string $action        Action name without the prefix.
+	 * @param string $label         Text of the first button.
+	 * @param array  $fields        Hidden fields.
+	 * @param string $message       What will change, and whether it can be undone.
+	 * @param string $confirm_label Text of the button that does it.
+	 * @param string $classes       Classes of the first button.
+	 * @param string $aria_label    Accessible name of the first button.
+	 */
+	public static function confirm_button( string $action, string $label, array $fields, string $message, string $confirm_label, string $classes = 'button', string $aria_label = '' ): void {
+		static $count = 0;
+		++$count;
+		$id = 'ast-confirm-' . $count;
+
+		echo '<details class="ast-confirm"><summary class="' . esc_attr( $classes ) . '"' . ( '' !== $aria_label ? ' aria-label="' . esc_attr( $aria_label ) . '"' : '' ) . '>' . esc_html( $label ) . '</summary>';
+		echo '<div class="axle-confirm axle-confirm--danger" role="group" aria-labelledby="' . esc_attr( $id ) . '"><p id="' . esc_attr( $id ) . '">' . esc_html( $message ) . '</p>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '">';
+		wp_nonce_field( 'axle_smoke_test_' . $action );
+		echo '<input type="hidden" name="action" value="' . esc_attr( 'axle_smoke_test_' . $action ) . '">';
+		foreach ( $fields as $name => $value ) {
+			echo '<input type="hidden" name="' . esc_attr( (string) $name ) . '" value="' . esc_attr( (string) $value ) . '">';
+		}
+		echo '<div class="axle-actions"><button type="submit" class="button axle-button--danger">' . esc_html( $confirm_label ) . '</button> <button type="button" class="button ast-cancel">' . esc_html__( 'Cancel', 'axle-smoke-test' ) . '</button></div>';
+		echo '</form></div></details>';
 	}
 
 	/**
@@ -668,13 +915,132 @@ final class Page implements Service {
 	public function handle_remove_url(): void {
 		$this->verify( 'remove_url' );
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- Checked in verify().
-		$key = isset( $_POST['key'] ) ? sanitize_key( wp_unslash( $_POST['key'] ) ) : '';
-		$this->runner->urls()->remove( $key );
+		$key   = isset( $_POST['key'] ) ? sanitize_key( wp_unslash( $_POST['key'] ) ) : '';
+		$entry = $this->runner->urls()->find( $key );
+		if ( $entry && 'custom' === $entry['source'] && $this->runner->urls()->remove( $key ) ) {
+			self::remember_undo(
+				array(
+					'type'  => 'url',
+					'entry' => $entry,
+				)
+			);
+		}
 		$this->back(
 			array(
 				'tab'  => 'settings',
 				'done' => 'url_removed',
 			)
+		);
+	}
+
+	/**
+	 * Saves the rules of one key URL.
+	 */
+	public function handle_save_rules(): void {
+		$this->verify( 'save_rules' );
+		// phpcs:disable WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Checked in verify(); each line is cleaned in Rules::clean().
+		$key   = isset( $_POST['key'] ) ? sanitize_key( wp_unslash( $_POST['key'] ) ) : '';
+		$rules = array(
+			'must'     => isset( $_POST['must'] ) ? (string) wp_unslash( $_POST['must'] ) : '',
+			'must_not' => isset( $_POST['must_not'] ) ? (string) wp_unslash( $_POST['must_not'] ) : '',
+		);
+		// phpcs:enable
+		$saved = $this->runner->urls()->set_rules( $key, $rules );
+		$this->back(
+			array(
+				'tab'  => 'settings',
+				'done' => is_wp_error( $saved ) ? '' : 'rules_saved',
+			),
+			is_wp_error( $saved ) ? $saved : null
+		);
+	}
+
+	/**
+	 * Accepts one finding of the structure check.
+	 */
+	public function handle_accept_finding(): void {
+		$this->verify( 'accept_finding' );
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Checked in verify().
+		$run = isset( $_POST['run'] ) ? absint( $_POST['run'] ) : 0;
+		$key = isset( $_POST['url_key'] ) ? sanitize_key( wp_unslash( $_POST['url_key'] ) ) : '';
+		$sig = isset( $_POST['sig'] ) ? sanitize_text_field( wp_unslash( $_POST['sig'] ) ) : '';
+		// phpcs:enable
+		$done = $this->runner->accept_finding( $run, $key, $sig );
+		if ( ! is_wp_error( $done ) ) {
+			self::remember_undo(
+				array(
+					'type' => 'finding',
+					'run'  => $run,
+					'key'  => $key,
+					'sig'  => $sig,
+				)
+			);
+		}
+		$this->back(
+			array(
+				'run'  => $run,
+				'done' => is_wp_error( $done ) ? '' : 'finding_accepted',
+			),
+			is_wp_error( $done ) ? $done : null
+		);
+	}
+
+	/**
+	 * Adds every suggested page.
+	 */
+	public function handle_add_suggestions(): void {
+		$this->verify( 'add_suggestions' );
+		$added = Presets::add( $this->runner->urls() );
+		$this->back(
+			array(
+				'tab'  => 'settings',
+				'done' => is_wp_error( $added ) ? '' : 'suggestions',
+			),
+			is_wp_error( $added ) ? $added : null
+		);
+	}
+
+	/**
+	 * Hides the Get started card for this user.
+	 */
+	public function handle_dismiss_steps(): void {
+		$this->verify( 'dismiss_steps' );
+		update_user_meta( get_current_user_id(), self::STEPS_META, 1 );
+		$this->back( array( 'done' => 'steps_dismissed' ) );
+	}
+
+	/**
+	 * Undoes the last removal of a URL or acceptance of a finding.
+	 */
+	public function handle_undo(): void {
+		$this->verify( 'undo' );
+		$key  = 'axle_smoke_test_undo_' . get_current_user_id();
+		$undo = get_transient( $key );
+		delete_transient( $key );
+		if ( ! is_array( $undo ) ) {
+			$this->back( array(), new \WP_Error( 'axle_smoke_test_no_undo', __( 'There is nothing to undo any more.', 'axle-smoke-test' ) ) );
+		}
+
+		if ( 'url' === ( $undo['type'] ?? '' ) ) {
+			$entry = (array) ( $undo['entry'] ?? array() );
+			$added = $this->runner->urls()->add( (string) ( $entry['url'] ?? '' ), (array) ( $entry['expected'] ?? array( 200 ) ), ! empty( $entry['browser'] ), (string) ( $entry['label'] ?? '' ), (array) ( $entry['own_rules'] ?? array() ) );
+			$this->back(
+				array(
+					'tab'  => 'settings',
+					'done' => is_wp_error( $added ) ? '' : 'url_restored',
+				),
+				is_wp_error( $added ) ? $added : null
+			);
+		}
+
+		$run  = (int) ( $undo['run'] ?? 0 );
+		$done = $this->runner->restore_finding( $run, (string) ( $undo['key'] ?? '' ), (string) ( $undo['sig'] ?? '' ) );
+		$this->back(
+			array(
+				'run'  => $run,
+				'done' => is_wp_error( $done ) ? '' : 'finding_restored',
+			),
+			is_wp_error( $done ) ? $done : null
 		);
 	}
 

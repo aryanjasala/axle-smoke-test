@@ -166,6 +166,43 @@ final class RollbackTest extends SmokeTestCase {
 		$this->assertSame( 1, Backups::purge( true ) );
 	}
 
+	public function test_rolling_back_needs_the_capability_of_what_it_changes(): void {
+		Actions\expectDone( 'axle_smoke_test_before_rollback' )->never();
+		( new Backups() )->create( 'plugin', 'shop/shop.php', '1.1' );
+		$this->write_plugin( '1.2' );
+		$this->caps = array( 'update_plugins' => false, 'activate_plugins' => true );
+
+		$denied = $this->rollback()->rollback( $this->red_run(), '', 7, false );
+
+		$this->assertSame( 'axle_smoke_test_forbidden', $denied->get_error_code() );
+		$this->assertSame( 403, $denied->get_error_data()['status'] );
+		$this->assertStringContainsString( 'Version: 1.2', (string) file_get_contents( WP_PLUGIN_DIR . '/shop/shop.php' ), 'The files were not touched.' );
+	}
+
+	public function test_a_theme_needs_update_themes_and_a_filter_can_change_it(): void {
+		$theme = array( 'type' => 'theme', 'id' => 'tt5' );
+		$this->caps = array( 'update_plugins' => true );
+		$this->assertFalse( Rollback::may_roll_back( $theme, 1 ) );
+		$this->assertTrue( Rollback::may_roll_back( array( 'type' => 'plugin', 'id' => 'a/a.php' ), 1 ) );
+
+		$this->caps = array( 'update_themes' => true );
+		$this->assertTrue( Rollback::may_roll_back( $theme, 1 ) );
+
+		Filters\expectApplied( 'axle_smoke_test_rollback_capability' )->once()->andReturn( 'manage_options' );
+		$this->assertFalse( Rollback::may_roll_back( $theme, 1 ) );
+	}
+
+	public function test_all_backups_together_stay_under_the_total_limit_oldest_first(): void {
+		Filters\expectApplied( 'axle_smoke_test_backups_total_max_bytes' )->atLeast()->once()->andReturn( 1 );
+		$backups = new Backups();
+		$backups->create( 'plugin', 'shop/shop.php', '1.0' );
+		$backups->create( 'plugin', 'shop/shop.php', '1.1' );
+
+		// Each zip is larger than the limit: only the newest one is kept.
+		$this->assertSame( array( '1.1' ), array_column( Backups::all(), 'version' ) );
+		$this->assertCount( 1, glob( Backups::dir() . '/*.zip' ) );
+	}
+
 	public function test_a_failed_restore_fires_rollback_failed(): void {
 		Actions\expectDone( 'axle_smoke_test_rollback_failed' )->once();
 		( new Backups() )->create( 'plugin', 'shop/shop.php', '1.1' );

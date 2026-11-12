@@ -9,6 +9,8 @@ namespace AryanX\Axle\SmokeTest\Admin;
 
 use AryanX\Axle\SmokeTest\Crypto;
 use AryanX\Axle\SmokeTest\MuPlugin;
+use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\Structure;
 use AryanX\Axle\SmokeTest\Settings;
 use AryanX\Axle\SmokeTest\Urls;
 
@@ -73,6 +75,7 @@ final class SettingsView {
 	 * Draws the tab.
 	 */
 	public function render(): void {
+		$this->suggestions_section();
 		$this->urls_section();
 
 		$s = $this->settings->all();
@@ -130,7 +133,7 @@ final class SettingsView {
 		echo '</table>';
 		echo '</section>';
 
-		echo '<section class="axle-card">';
+		echo '<section class="axle-card" id="ast-alerts">';
 		echo '<h2 class="axle-card__title">' . esc_html__( 'Alerts', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		echo '<tr><th scope="row"><label for="ast-alert-on">' . esc_html__( 'Alert on', 'axle-smoke-test' ) . '</label></th><td><select id="ast-alert-on" name="settings[alert_on]">';
@@ -212,15 +215,38 @@ final class SettingsView {
 	}
 
 	/**
-	 * The key URL list with add and remove.
+	 * Pages a shop or a multilingual site depends on, with one button to add them.
+	 */
+	private function suggestions_section(): void {
+		$suggestions = Presets::suggestions( $this->urls );
+		if ( ! $suggestions ) {
+			return;
+		}
+
+		echo '<section class="axle-card" id="ast-suggestions" aria-labelledby="ast-suggestions-title">';
+		echo '<h2 class="axle-card__title" id="ast-suggestions-title">' . esc_html__( 'Suggested pages', 'axle-smoke-test' ) . '</h2>';
+		echo '<p>' . esc_html__( 'These pages are not checked yet. Each comes with rules for what it must show. They are only loaded, never filled in: nothing is submitted, added to a cart or ordered.', 'axle-smoke-test' ) . '</p>';
+		echo '<div class="axle-scroll" tabindex="0" role="region" aria-label="' . esc_attr__( 'Suggested pages', 'axle-smoke-test' ) . '">';
+		echo '<table class="widefat striped ast-suggestions"><thead><tr><th scope="col">' . esc_html__( 'Page', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'URL', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Why', 'axle-smoke-test' ) . '</th></tr></thead><tbody>';
+		foreach ( $suggestions as $suggestion ) {
+			echo '<tr><th scope="row">' . esc_html( (string) $suggestion['label'] ) . '</th><td><code>' . esc_html( (string) wp_parse_url( (string) $suggestion['url'], PHP_URL_PATH ) ) . '</code></td><td>' . esc_html( (string) $suggestion['reason'] ) . '</td></tr>';
+		}
+		echo '</tbody></table></div>';
+		Page::post_button( 'add_suggestions', __( 'Add these pages', 'axle-smoke-test' ), array(), 'button button-primary' );
+		echo '</section>';
+	}
+
+	/**
+	 * The key URL list with rules, add and remove.
 	 */
 	private function urls_section(): void {
-		echo '<section class="axle-card">';
+		echo '<section class="axle-card" id="ast-urls">';
 		echo '<h2 class="axle-card__title">' . esc_html__( 'Key URLs', 'axle-smoke-test' ) . '</h2>';
 		/* translators: %d: maximum number of URLs. */
 		echo '<p>' . esc_html( sprintf( __( 'Every run checks these, up to %d. Pages picked from the site follow the boxes below; add your own for checkout, landing pages or anything that must never break.', 'axle-smoke-test' ), Urls::max() ) ) . '</p>';
+		echo '<div class="axle-scroll" tabindex="0" role="region" aria-label="' . esc_attr__( 'Key URLs', 'axle-smoke-test' ) . '">';
 		echo '<table class="widefat striped ast-urls"><thead><tr>';
-		foreach ( array( __( 'Page', 'axle-smoke-test' ), __( 'URL', 'axle-smoke-test' ), __( 'Expected status', 'axle-smoke-test' ), __( 'Browser check', 'axle-smoke-test' ), __( 'Source', 'axle-smoke-test' ), __( 'Actions', 'axle-smoke-test' ) ) as $column ) {
+		foreach ( array( __( 'Page', 'axle-smoke-test' ), __( 'URL', 'axle-smoke-test' ), __( 'Expected status', 'axle-smoke-test' ), __( 'Browser check', 'axle-smoke-test' ), __( 'Source', 'axle-smoke-test' ), __( 'Rules', 'axle-smoke-test' ), __( 'Actions', 'axle-smoke-test' ) ) as $column ) {
 			echo '<th scope="col">' . esc_html( $column ) . '</th>';
 		}
 		echo '</tr></thead><tbody>';
@@ -232,13 +258,24 @@ final class SettingsView {
 			echo '<td>' . ( $url['browser'] ? esc_html__( 'Yes', 'axle-smoke-test' ) : esc_html__( 'No', 'axle-smoke-test' ) ) . '</td>';
 			echo '<td>' . ( 'custom' === $url['source'] ? esc_html__( 'Added by you', 'axle-smoke-test' ) : esc_html__( 'Picked from the site', 'axle-smoke-test' ) ) . '</td>';
 			echo '<td>';
+			$this->rules_cell( $url );
+			echo '</td>';
+			echo '<td>';
 			if ( 'custom' === $url['source'] ) {
-				/* translators: %s: page label. */
-				Page::post_button( 'remove_url', __( 'Remove', 'axle-smoke-test' ), array( 'key' => $url['key'] ), 'button-link button-link-delete', sprintf( __( 'Remove %s', 'axle-smoke-test' ), $url['label'] ) );
+				Page::confirm_button(
+					'remove_url',
+					__( 'Remove', 'axle-smoke-test' ),
+					array( 'key' => $url['key'] ),
+					__( 'This page is no longer checked, and its rules are deleted. Its past results stay. You can undo it right after.', 'axle-smoke-test' ),
+					__( 'Remove this URL', 'axle-smoke-test' ),
+					'button-link button-link-delete',
+					/* translators: %s: page label. */
+					sprintf( __( 'Remove %s', 'axle-smoke-test' ), $url['label'] )
+				);
 			}
 			echo '</td></tr>';
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table></div>';
 		echo '</section>';
 
 		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="axle-card ast-add-url">';
@@ -254,6 +291,43 @@ final class SettingsView {
 	}
 
 	/**
+	 * The rules of a URL: the ones built in, and a form for the person's own.
+	 *
+	 * @param array $url The URL entry.
+	 */
+	private function rules_cell( array $url ): void {
+		$own   = (array) ( $url['own_rules'] ?? array() );
+		$all   = (array) ( $url['rules'] ?? array() );
+		$count = count( (array) ( $all['must'] ?? array() ) ) + count( (array) ( $all['must_not'] ?? array() ) );
+		$id    = 'ast-rules-' . $url['key'];
+
+		echo '<details class="ast-rules"><summary>' . esc_html(
+			$count
+				/* translators: %d: number of rules. */
+				? sprintf( _n( '%d rule', '%d rules', $count, 'axle-smoke-test' ), $count )
+				: __( 'Add rules', 'axle-smoke-test' )
+		) . '</summary>';
+		echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="ast-rules-form">';
+		wp_nonce_field( 'axle_smoke_test_save_rules' );
+		echo '<input type="hidden" name="action" value="axle_smoke_test_save_rules"><input type="hidden" name="key" value="' . esc_attr( $url['key'] ) . '">';
+		foreach ( array(
+			'must'     => __( 'Must contain', 'axle-smoke-test' ),
+			'must_not' => __( 'Must not contain', 'axle-smoke-test' ),
+		) as $kind => $label ) {
+			$built_in = array_diff( (array) ( $all[ $kind ] ?? array() ), (array) ( $own[ $kind ] ?? array() ) );
+			echo '<p><label for="' . esc_attr( $id . '-' . $kind ) . '">' . esc_html( $label ) . '</label><br>';
+			echo '<textarea class="large-text" rows="3" id="' . esc_attr( $id . '-' . $kind ) . '" name="' . esc_attr( $kind ) . '" aria-describedby="' . esc_attr( $id . '-help' ) . '">' . esc_textarea( implode( "\n", (array) ( $own[ $kind ] ?? array() ) ) ) . '</textarea></p>';
+			if ( $built_in ) {
+				/* translators: %s: rules, separated by commas. */
+				echo '<p class="description">' . esc_html( sprintf( __( 'Built in: %s', 'axle-smoke-test' ), implode( ', ', array_map( array( Structure::class, 'plain' ), $built_in ) ) ) ) . '</p>';
+			}
+		}
+		echo '<p class="description" id="' . esc_attr( $id . '-help' ) . '">' . esc_html__( 'One rule on each line. Plain text, or a simple CSS selector such as .buy-button or form#contact.', 'axle-smoke-test' ) . '</p>';
+		submit_button( __( 'Save rules', 'axle-smoke-test' ), 'secondary small', 'submit', false );
+		echo '</form></details>';
+	}
+
+	/**
 	 * Install or remove the early collector.
 	 */
 	private function mu_section(): void {
@@ -262,12 +336,17 @@ final class SettingsView {
 		echo '<p>' . esc_html__( 'Without it, PHP warnings raised while other plugins load are only seen through debug.log or as fatal errors. With it, one small file in wp-content/mu-plugins starts the collector first, on smoke test requests only. It is removed when this plugin is deactivated.', 'axle-smoke-test' ) . '</p>';
 		$installed = MuPlugin::installed();
 		echo '<p>' . ( $installed ? '<span class="axle-badge axle-badge--good">' . esc_html__( 'Installed', 'axle-smoke-test' ) . '</span>' : '<span class="axle-badge axle-badge--neutral">' . esc_html__( 'Not installed', 'axle-smoke-test' ) . '</span>' ) . '</p>';
-		Page::post_button(
-			'mu_plugin',
-			$installed ? __( 'Remove the early collector', 'axle-smoke-test' ) : __( 'Install the early collector', 'axle-smoke-test' ),
-			array( 'do' => $installed ? 'remove' : 'install' ),
-			'button'
-		);
+		if ( $installed ) {
+			Page::confirm_button(
+				'mu_plugin',
+				__( 'Remove the early collector', 'axle-smoke-test' ),
+				array( 'do' => 'remove' ),
+				__( 'This deletes the small file from wp-content/mu-plugins. PHP warnings raised while other plugins load are then only seen through debug.log. You can install it again at any time.', 'axle-smoke-test' ),
+				__( 'Remove the file', 'axle-smoke-test' )
+			);
+		} else {
+			Page::post_button( 'mu_plugin', __( 'Install the early collector', 'axle-smoke-test' ), array( 'do' => 'install' ), 'button' );
+		}
 		echo '</section>';
 	}
 

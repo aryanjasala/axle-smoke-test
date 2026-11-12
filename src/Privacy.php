@@ -155,6 +155,10 @@ final class Privacy implements Service {
 		$user    = get_user_by( 'email', (string) $email );
 		if ( $user ) {
 			$removed += $this->runs->forget_user( (int) $user->ID );
+			if ( get_user_meta( (int) $user->ID, \AryanX\Axle\SmokeTest\Admin\Page::STEPS_META, true ) ) {
+				delete_user_meta( (int) $user->ID, \AryanX\Axle\SmokeTest\Admin\Page::STEPS_META );
+				++$removed;
+			}
 		}
 
 		$emails = array_filter( array_map( 'trim', explode( ',', (string) $this->settings->get( 'emails' ) ) ) );
@@ -181,7 +185,7 @@ final class Privacy implements Service {
 
 		wp_add_privacy_policy_content(
 			__( 'Axle Smoke Test', 'axle-smoke-test' ),
-			'<p>' . esc_html__( 'After updates and deploys, this site loads its own key pages to check that they still work. The results record which administrator started each check. Page contents are not stored: only hashes, a text fingerprint and landmark counts. Results are deleted after 30 days by default. Alert emails go to the addresses an administrator set. No data is sent to other services, except alerts to a webhook the administrator set up.', 'axle-smoke-test' ) . '</p>'
+			'<p>' . esc_html__( 'After updates and deploys, this site loads its own key pages to check that they still work. The results record which administrator started each check. Page contents are not stored: only hashes, a text fingerprint and a short outline of each page: which parts it has, how many links and images, its title and main heading. Results are deleted after 30 days by default. Alert emails go to the addresses an administrator set. No data is sent to other services, except alerts to a webhook the administrator set up.', 'axle-smoke-test' ) . '</p>'
 		);
 	}
 }
