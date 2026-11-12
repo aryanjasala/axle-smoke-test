@@ -416,11 +416,16 @@ class Runner implements Service {
 	 */
 	private function store( array $run, array $result, array $thresholds ): array {
 		$baseline = $this->runs->baseline( $result['url_key'], $result['tier'] );
-		$verdict  = Verdict::evaluate( $result, $baseline, $thresholds );
+
+		$result['meta'] = (array) ( $result['meta'] ?? array() );
+		$accepted       = Rules::accepted( (string) $result['url_key'] );
+		if ( $accepted ) {
+			$result['meta']['accepted'] = $accepted;
+		}
+		$verdict = Verdict::evaluate( $result, $baseline, $thresholds );
 
 		$result['run_id']                = (int) $run['id'];
 		$result['verdict']               = $verdict['verdict'];
-		$result['meta']                  = (array) ( $result['meta'] ?? array() );
 		$result['meta']['reasons']       = $verdict['reasons'];
 		$result['meta']['compared_with'] = $baseline ? (int) $baseline['id'] : 0;
 		if ( $baseline ) {
@@ -430,6 +435,8 @@ class Runner implements Service {
 
 		if ( Verdict::GREEN === $verdict['verdict'] && $result['id'] ) {
 			$this->runs->set_baseline( $result );
+			// A new baseline starts clean: what was accepted against the old one no longer applies.
+			Rules::clear_accepted( (string) $result['url_key'] );
 		}
 
 		/**
@@ -558,6 +565,14 @@ class Runner implements Service {
 			'label' => (string) ( $url['label'] ?? $key ),
 			'csp'   => array_map( $text, array_slice( (array) ( $data['csp'] ?? array() ), 0, 20 ) ),
 		);
+		$must = Structure::selectors( (array) ( $url['rules']['must'] ?? array() ) );
+		if ( $must ) {
+			$meta['must_selectors'] = $must;
+		}
+		$accepted = Rules::accepted( $key );
+		if ( $accepted ) {
+			$meta['accepted'] = $accepted;
+		}
 		if ( ! empty( $data['error'] ) ) {
 			$meta['error'] = $text( $data['error'] );
 		}
@@ -703,6 +718,7 @@ class Runner implements Service {
 				continue;
 			}
 			$this->runs->set_baseline( $result );
+			Rules::clear_accepted( (string) $result['url_key'] );
 			$accepted[] = $result;
 		}
 		if ( ! $accepted ) {
@@ -719,6 +735,123 @@ class Runner implements Service {
 		do_action( 'axle_smoke_test_baseline_accepted', $run, $accepted, $url_key );
 
 		return count( $accepted );
+	}
+
+	/**
+	 * Accepts one finding of the structure check for a URL: later runs stop
+	 * reporting it, and this run's result no longer counts it.
+	 *
+	 * @param int    $run_id  Run ID.
+	 * @param string $url_key URL key.
+	 * @param string $sig     Finding signature.
+	 * @return array|\WP_Error The run.
+	 */
+	public function accept_finding( int $run_id, string $url_key, string $sig ) {
+		return $this->change_finding( $run_id, $url_key, $sig, true );
+	}
+
+	/**
+	 * Takes an accepted finding back, so it is reported again.
+	 *
+	 * @param int    $run_id  Run ID.
+	 * @param string $url_key URL key.
+	 * @param string $sig     Finding signature.
+	 * @return array|\WP_Error The run.
+	 */
+	public function restore_finding( int $run_id, string $url_key, string $sig ) {
+		return $this->change_finding( $run_id, $url_key, $sig, false );
+	}
+
+	/**
+	 * Moves a finding between a result's reasons and its accepted list.
+	 *
+	 * @param int    $run_id  Run ID.
+	 * @param string $url_key URL key.
+	 * @param string $sig     Finding signature.
+	 * @param bool   $accept  Accept it, or take it back.
+	 * @return array|\WP_Error The run.
+	 */
+	private function change_finding( int $run_id, string $url_key, string $sig, bool $accept ) {
+		$run = $this->runs->get( $run_id );
+		if ( ! $run ) {
+			return new \WP_Error( 'axle_smoke_test_no_run', __( 'No such run.', 'axle-smoke-test' ), array( 'status' => 404 ) );
+		}
+
+		$changed = null;
+		foreach ( $this->runs->results( $run_id ) as $result ) {
+			if ( $result['url_key'] !== $url_key ) {
+				continue;
+			}
+			$meta    = (array) $result['meta'];
+			$reasons = (array) ( $meta['reasons'] ?? array() );
+			$hidden  = (array) ( $meta['accepted_reasons'] ?? array() );
+			$from    = $accept ? $reasons : $hidden;
+			$to      = $accept ? $hidden : $reasons;
+			foreach ( $from as $i => $reason ) {
+				if ( ! empty( $reason['acceptable'] ) && ( $reason['sig'] ?? '' ) === $sig ) {
+					$to[]       = $reason;
+					$from[ $i ] = null;
+					$changed    = $result;
+				}
+			}
+			if ( ! $changed ) {
+				continue;
+			}
+			$from                     = array_values( array_filter( $from ) );
+			$meta['reasons']          = $accept ? $from : $to;
+			$meta['accepted_reasons'] = $accept ? $to : $from;
+			$verdict                  = Verdict::level_of( $meta['reasons'] );
+			$this->runs->update_result(
+				(int) $result['id'],
+				array(
+					'meta'    => $meta,
+					'verdict' => $verdict,
+				)
+			);
+			$changed['verdict'] = $verdict;
+			$changed['meta']    = $meta;
+			break;
+		}
+		if ( ! $changed ) {
+			return new \WP_Error( 'axle_smoke_test_no_finding', __( 'That finding is not in this run any more.', 'axle-smoke-test' ), array( 'status' => 404 ) );
+		}
+
+		if ( $accept ) {
+			Rules::accept( $url_key, $sig );
+			if ( Verdict::GREEN === $changed['verdict'] && ! $changed['is_baseline'] ) {
+				// Nothing left to report: this page as it is now becomes the baseline. Remember the old one, for Undo.
+				$previous = $this->runs->baseline( $url_key, (string) $changed['tier'] );
+				if ( $previous ) {
+					$meta                      = (array) $changed['meta'];
+					$meta['replaced_baseline'] = (int) $previous['id'];
+					$meta['reasons']           = (array) ( $meta['reasons'] ?? array() );
+					$this->runs->update_result( (int) $changed['id'], array( 'meta' => $meta ) );
+				}
+				$this->runs->set_baseline( $changed );
+				Rules::clear_accepted( $url_key );
+			}
+		} else {
+			Rules::unaccept( $url_key, $sig );
+			$replaced = (int) ( $changed['meta']['replaced_baseline'] ?? 0 );
+			if ( $replaced && $changed['is_baseline'] ) {
+				$old = $this->runs->result( $replaced );
+				if ( $old ) {
+					$this->runs->set_baseline( $old );
+				}
+			}
+		}
+
+		/**
+		 * Fires after a finding was accepted for a URL, or taken back.
+		 *
+		 * @param array  $run      The run.
+		 * @param string $url_key  The URL.
+		 * @param string $sig      The finding's signature.
+		 * @param bool   $accepted True when accepted, false when taken back.
+		 */
+		do_action( 'axle_smoke_test_finding_accepted', $run, $url_key, $sig, $accept );
+
+		return $this->evaluate( $run_id );
 	}
 
 	/**

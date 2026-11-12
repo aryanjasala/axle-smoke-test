@@ -44,15 +44,21 @@ function createContent() {
 
 /** Empties both tables and the plugin's options: no runs, no baselines. */
 function resetRuns() {
+	showSteps();
 	sql( 'TRUNCATE TABLE wp_axle_smoke_runs' );
 	sql( 'TRUNCATE TABLE wp_axle_smoke_results' );
-	for ( const name of [ 'axle_smoke_test_alert_log', 'axle_smoke_test_notice', 'axle_smoke_test_settings', 'axle_smoke_test_urls', 'ast_fixture_mail' ] ) {
+	for ( const name of [ 'axle_smoke_test_alert_log', 'axle_smoke_test_notice', 'axle_smoke_test_settings', 'axle_smoke_test_urls', 'axle_smoke_test_rules', 'axle_smoke_test_accepted', 'ast_fixture_mail', 'ast_fixture_form', 'ast_fixture_languages' ] ) {
 		try {
 			wp( 'option', 'delete', name );
 		} catch ( error ) {
 			// Not set.
 		}
 	}
+}
+
+/** Shows the Get started card again for the admin. */
+function showSteps() {
+	wpEval( 'delete_user_meta( 1, "axle_smoke_test_steps_dismissed" );' );
 }
 
 /** Marks queued and waiting runs done, so no screen picks them up. */
@@ -110,4 +116,4 @@ function showNotice( id ) {
 module.exports = {
 	seedScreens,
 	waitingRun,
-	showNotice, sql, installFixture, setFixture, offer, createContent, resetRuns, settleRuns, getRun, setSettings, seedRuns, mails };
+	showNotice, showSteps, sql, installFixture, setFixture, offer, createContent, resetRuns, settleRuns, getRun, setSettings, seedRuns, mails };

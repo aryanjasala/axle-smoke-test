@@ -26,6 +26,13 @@ final class Urls {
 	public const AUTO_TYPES = array( 'home', 'post', 'page', 'category', 'search', 'not_found', 'feed', 'rest', 'login', 'dashboard', 'plugins', 'woocommerce' );
 
 	/**
+	 * The list built in this request, so a run that reads it for every result does not query the site each time.
+	 *
+	 * @var array[]|null
+	 */
+	private ?array $memo = null;
+
+	/**
 	 * Settings.
 	 *
 	 * @var Settings
@@ -47,6 +54,10 @@ final class Urls {
 	 * @return array[]
 	 */
 	public function all(): array {
+		if ( null !== $this->memo ) {
+			return $this->memo;
+		}
+
 		$urls = array_merge( $this->auto(), $this->custom() );
 
 		/**
@@ -60,11 +71,23 @@ final class Urls {
 		foreach ( $urls as $url ) {
 			$url = self::normalise( $url );
 			if ( $url && ! isset( $clean[ $url['key'] ] ) ) {
+				// Rules built into a page (a shop page must show its cart) and the person's own rules.
+				$url['own_rules']     = Rules::saved( $url['key'] );
+				$url['rules']         = Rules::merge( $url['rules'], $url['own_rules'] );
 				$clean[ $url['key'] ] = $url;
 			}
 		}
 
-		return array_slice( array_values( $clean ), 0, self::max() );
+		$this->memo = array_slice( array_values( $clean ), 0, self::max() );
+
+		return $this->memo;
+	}
+
+	/**
+	 * Forgets the list built in this request, after something it depends on changed.
+	 */
+	public function flush(): void {
+		$this->memo = null;
 	}
 
 	/**
@@ -144,9 +167,10 @@ final class Urls {
 	 * @param int[]  $expected Expected statuses. Default 200.
 	 * @param bool   $browser  Check it in the browser tier too.
 	 * @param string $label    Label. Default: the path.
+	 * @param array  $rules    Rules for the page: must and must_not.
 	 * @return array|\WP_Error The URL.
 	 */
-	public function add( string $url, array $expected = array( 200 ), bool $browser = true, string $label = '' ) {
+	public function add( string $url, array $expected = array( 200 ), bool $browser = true, string $label = '', array $rules = array() ) {
 		$absolute = self::absolute( $url );
 		if ( '' === $absolute ) {
 			return new \WP_Error( 'axle_smoke_test_bad_url', __( 'Use a URL on this site, or a path like /shop/.', 'axle-smoke-test' ) );
@@ -181,8 +205,36 @@ final class Urls {
 
 		$custom[] = $item;
 		update_option( self::OPTION, $custom, false );
+		if ( $rules ) {
+			Rules::save( $item['key'], $rules );
+		}
+		$this->flush();
+
+		/**
+		 * Fires after a key URL was added to the list.
+		 *
+		 * @param array $item The URL entry.
+		 */
+		do_action( 'axle_smoke_test_url_added', $item );
 
 		return $item;
+	}
+
+	/**
+	 * Saves the "must contain" and "must not contain" rules of a key URL, picked from the site or added.
+	 *
+	 * @param string $key   URL key.
+	 * @param array  $rules must and must_not: lists of text or CSS selectors.
+	 * @return array|\WP_Error The rules as saved.
+	 */
+	public function set_rules( string $key, array $rules ) {
+		if ( ! $this->find( $key ) ) {
+			return new \WP_Error( 'axle_smoke_test_no_url', __( 'No key URL has that key.', 'axle-smoke-test' ), array( 'status' => 404 ) );
+		}
+		$saved = Rules::save( $key, $rules );
+		$this->flush();
+
+		return $saved;
 	}
 
 	/**
@@ -206,6 +258,16 @@ final class Urls {
 		}
 
 		update_option( self::OPTION, $kept, false );
+		Rules::forget( $key );
+		$this->flush();
+
+		/**
+		 * Fires after a key URL was removed from the list.
+		 *
+		 * @param string $key URL key.
+		 */
+		do_action( 'axle_smoke_test_url_removed', $key );
+
 		return true;
 	}
 
@@ -313,15 +375,9 @@ final class Urls {
 		);
 
 		if ( ! empty( $on['woocommerce'] ) && function_exists( 'wc_get_page_permalink' ) ) {
-			$add( 'woocommerce', 'shop', __( 'Shop', 'axle-smoke-test' ), (string) wc_get_page_permalink( 'shop' ) );
-			$product = self::latest( 'product', 0 );
-			if ( $product ) {
-				$add( 'woocommerce', 'latest-product', __( 'Latest product', 'axle-smoke-test' ), (string) get_permalink( $product ) );
+			foreach ( Presets::shop() as $page ) {
+				$add( 'woocommerce', $page['key'], $page['label'], $page['url'], array_diff_key( $page, array_flip( array( 'key', 'label', 'url' ) ) ) );
 			}
-			$add( 'woocommerce', 'cart', __( 'Cart', 'axle-smoke-test' ), (string) wc_get_page_permalink( 'cart' ) );
-			// With an empty cart, checkout either sends the visitor to the cart or says the cart is empty.
-			$add( 'woocommerce', 'checkout', __( 'Checkout (empty cart)', 'axle-smoke-test' ), (string) wc_get_page_permalink( 'checkout' ), array( 'expected' => array( 200, 302 ) ) );
-			$add( 'woocommerce', 'my-account', __( 'My account', 'axle-smoke-test' ), (string) wc_get_page_permalink( 'myaccount' ) );
 		}
 
 		/**
@@ -362,7 +418,11 @@ final class Urls {
 			'auth'     => ! empty( $url['auth'] ),
 			'kind'     => $kind,
 			'source'   => isset( $url['source'] ) && 'custom' === $url['source'] ? 'custom' : 'auto',
+			'rules'    => Rules::clean( $url['rules'] ?? array() ),
 		);
+		if ( ! empty( $url['group'] ) ) {
+			$entry['group'] = sanitize_key( (string) $url['group'] );
+		}
 
 		/**
 		 * Filters the HTTP statuses a URL may answer with and stay green.

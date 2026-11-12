@@ -28,10 +28,12 @@ Part of Axle by AryanX, a family of plugins for running WordPress sites safely.
 
 **What it checks, from the server:**
 
-* Each key URL loads with the status you expect: the home page, the latest post and page, a category, search, a page that should be a 404, the feed, the REST API, the login page, the dashboard and the Plugins screen. With WooCommerce also the shop, a product, cart, checkout and my account. Add your own URLs, up to 25.
+* Each key URL loads with the status you expect: the home page, the latest post and page, a category, search, a page that should be a 404, the feed, the REST API, the login page, the dashboard and the Plugins screen. With WooCommerce also the shop, a product in stock, cart, checkout and my account, each with rules for what it must show. Add your own URLs, up to 25.
 * Fatal errors, through the same check WordPress uses for its own auto-update rollback, and core's "critical error" page.
 * New PHP warnings and notices, with the plugin or theme that raised them.
-* Blank pages, missing scripts and stylesheets, landmarks (header, nav, main, footer, h1, forms) that are gone, and visible text that changed past a threshold.
+* Blank pages, missing scripts and stylesheets, and visible text that changed past a threshold.
+* Pages that load fine but are empty: each page learns what it is made of (header, menu, footer, forms, Add to cart buttons, counts of links and images). When a part goes missing, the page turns red and says what is gone: "The page no longer has a form. It had 1." Accept a finding on its own when the change was meant.
+* Your own rules per page: text or a simple CSS selector that it must contain or must not contain.
 * wp-admin screens as a signed-in admin, with a login that works once, for one screen, for 60 seconds.
 
 **What it checks in your browser:**
@@ -40,13 +42,17 @@ When you have wp-admin open, the same pages load in a hidden frame. It records J
 
 **Verdicts:**
 
-* Red: an unexpected 4xx or 5xx, a fatal error, the critical error page, or a blank page.
-* Amber: new PHP warnings, new JavaScript errors, missing files, a landmark gone or moved, or the text changed a lot.
+* Red: an unexpected 4xx or 5xx, a fatal error, the critical error page, a blank page, a header, form or button that went missing, or a broken rule.
+* Amber: new PHP warnings, new JavaScript errors, missing files, far fewer links, images or text, a landmark moved, or the text changed a lot.
 * Green: the page looks like its baseline, the last green run. A redesign is not a failure: accept the run as the new baseline.
+
+**Shops and multilingual sites:**
+
+With WPML, Polylang or TranslatePress the home page of each language, and its shop pages, are offered as suggested pages with one click, never added by themselves. Pages are only loaded: nothing is submitted, added to a cart or ordered.
 
 **Rollback:**
 
-Before each plugin or theme update, the current files are zipped (up to 100 MB, the last 2 per item, for 14 days). A red run offers "Roll back Smoke Fixture to 1.1": it puts the old files back, clears OPcache and runs the check again. Auto rollback is there too, off by default. Database changes the new version made are not undone, and the run lists the version options that changed so you know. Core updates are never rolled back.
+Before each plugin or theme update, the current files are zipped (up to 100 MB each, 500 MB in all, the last 2 per item, for 14 days). A red run offers "Roll back Smoke Fixture to 1.1": it puts the old files back, clears OPcache and runs the check again. Auto rollback is there too, off by default. Database changes the new version made are not undone, and the run lists the version options that changed so you know. Core updates are never rolled back.
 
 **Alerts:**
 
@@ -63,7 +69,7 @@ Free and open source under the GPL. No pro version, no upsells, no ads in wp-adm
 = WP-CLI =
 
 * `wp axle-smoke-test run [--urls=<keys>] [--reason=<text>] [--wait]` runs a check now and exits with 1 on red.
-* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
+* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `rules list|set|clear`, `findings accept|restore`, `suggestions list|add`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
 
 = For developers =
 
@@ -75,7 +81,7 @@ Every default, limit, list and message has a filter, and every step fires an act
 
 == Privacy ==
 
-Runs remember which administrator started them. Page contents are never stored: only a hash, a text fingerprint and landmark counts. Runs are deleted after 30 days (or 200 runs). Alert emails go to the addresses you set. The webhook URL and the basic-auth password are stored encrypted. The plugin adds text to Settings > Privacy and takes part in Export and Erase Personal Data.
+Runs remember which administrator started them. Page contents are never stored: only a hash, a text fingerprint and a short outline of each page. Runs are deleted after 30 days (or 200 runs). Alert emails go to the addresses you set. The webhook URL and the basic-auth password are stored encrypted. The plugin adds text to Settings > Privacy and takes part in Export and Erase Personal Data.
 
 == External services ==
 
@@ -90,6 +96,10 @@ No. Nothing runs on normal page views. A run makes one request per key URL (and 
 = My host blocks loopback requests. =
 
 Then the server checks cannot run. The run fails with core's own loopback test result from Site Health, so you know why. Sites behind a password prompt work: add the username and password in the settings.
+
+= A page says it is fine but a form is missing. Will it notice? =
+
+Yes. Each page's parts are learned at baseline. When a header, footer, menu, form or Add to cart button disappears, the page turns red and the run says what is gone. If the change was meant, accept that one finding. You can also add rules per page, such as a must-contain selector.
 
 = Does it take screenshots? =
 

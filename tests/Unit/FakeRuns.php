@@ -87,6 +87,11 @@ class FakeRuns extends Runs {
 		return $id;
 	}
 
+	public function update_result( int $id, array $fields ): bool {
+		$this->results[ $id ] = array_merge( $this->results[ $id ], $fields );
+		return true;
+	}
+
 	public function result( int $id ): ?array {
 		return $this->results[ $id ] ?? null;
 	}

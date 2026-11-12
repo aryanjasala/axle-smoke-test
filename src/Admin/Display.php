@@ -51,14 +51,8 @@ final class Display {
 	 */
 	public static function time( string $gmt ): string {
 		$time = '' === $gmt || '0000-00-00 00:00:00' === $gmt ? 0 : (int) strtotime( $gmt . ' UTC' );
-		if ( ! $time ) {
-			return '';
-		}
-		$now = time();
-		/* translators: %s: a time span such as "5 minutes". */
-		$text = $time > $now ? sprintf( __( 'in %s', 'axle-smoke-test' ), human_time_diff( $now, $time ) ) : sprintf( __( '%s ago', 'axle-smoke-test' ), human_time_diff( $time, $now ) );
 
-		return '<time datetime="' . esc_attr( gmdate( 'c', $time ) ) . '" title="' . esc_attr( self::date( $gmt ) ) . '">' . esc_html( $text ) . '</time>';
+		return $time ? AxleUi::relative_time( $time ) : '';
 	}
 
 	/**

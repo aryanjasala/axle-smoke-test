@@ -9,6 +9,7 @@ namespace AryanX\Axle\SmokeTest\Tests\Unit;
 
 use AryanX\Axle\SmokeTest\Attribution;
 use AryanX\Axle\SmokeTest\Checker;
+use AryanX\Axle\SmokeTest\Rules;
 use AryanX\Axle\SmokeTest\Runner;
 use AryanX\Axle\SmokeTest\Schema;
 use AryanX\Axle\SmokeTest\Settings;
@@ -198,6 +199,92 @@ final class RunnerTest extends SmokeTestCase {
 		$this->assertSame( 1, $runner->accept_baseline( (int) $run['id'], 'shop' ) );
 		$this->assertSame( 1, $this->runs->results[2]['is_baseline'] );
 		$this->assertSame( 'axle_smoke_test_no_results', $runner->accept_baseline( (int) $run['id'], 'nope' )->get_error_code() );
+	}
+
+	private function red_run_with_finding(): int {
+		$id = $this->runs->create( 'manual', array( 'checked' => array( 'home' ) ), 1, 'done' );
+		$this->runs->add_result(
+			array(
+				'run_id'      => $id,
+				'url_key'     => 'home',
+				'url'         => 'https://example.com/',
+				'tier'        => 'server',
+				'verdict'     => 'red',
+				'is_baseline' => 0,
+				'meta'        => array(
+					'reasons' => array(
+						array( 'level' => 'red', 'code' => 'structure_form', 'message' => 'The page no longer has a form. It had 1.', 'source' => '', 'sig' => 'form:form:/', 'acceptable' => true ),
+						array( 'level' => 'amber', 'code' => 'text', 'message' => 'About 70% of the visible text changed.', 'source' => '' ),
+					),
+				),
+			)
+		);
+		return $id;
+	}
+
+	public function test_accepting_one_finding_keeps_the_others_and_can_be_taken_back(): void {
+		Actions\expectDone( 'axle_smoke_test_finding_accepted' )->twice();
+		$runner = $this->runner();
+		$id     = $this->red_run_with_finding();
+
+		$runner->accept_finding( $id, 'home', 'form:form:/' );
+
+		$this->assertSame( 'amber', $this->runs->results[1]['verdict'] );
+		$this->assertSame( array( 'text' ), array_column( $this->runs->results[1]['meta']['reasons'], 'code' ) );
+		$this->assertSame( array( 'form:form:/' ), Rules::accepted( 'home' ) );
+		$this->assertSame( 0, $this->runs->results[1]['is_baseline'] );
+
+		$runner->restore_finding( $id, 'home', 'form:form:/' );
+
+		$this->assertSame( 'red', $this->runs->results[1]['verdict'] );
+		$this->assertSame( array(), Rules::accepted( 'home' ) );
+		$this->assertSame( 'axle_smoke_test_no_finding', $runner->restore_finding( $id, 'home', 'nope' )->get_error_code() );
+	}
+
+	public function test_accepting_the_last_finding_makes_the_page_the_new_baseline(): void {
+		$runner = $this->runner();
+		$id     = $this->red_run_with_finding();
+		$this->runs->results[1]['meta']['reasons'] = array_slice( $this->runs->results[1]['meta']['reasons'], 0, 1 );
+
+		$runner->accept_finding( $id, 'home', 'form:form:/' );
+
+		$this->assertSame( 'green', $this->runs->results[1]['verdict'] );
+		$this->assertSame( 1, $this->runs->results[1]['is_baseline'] );
+		$this->assertSame( array(), Rules::accepted( 'home' ), 'A new baseline starts with nothing accepted.' );
+	}
+
+	public function test_taking_back_the_last_finding_puts_the_old_baseline_back(): void {
+		$runner = $this->runner();
+		$this->runs->add_result( array( 'run_id' => 0, 'url_key' => 'home', 'url' => 'https://example.com/', 'tier' => 'server', 'verdict' => 'green', 'is_baseline' => 1, 'meta' => array() ) );
+		$id = $this->red_run_with_finding();
+		$this->runs->results[2]['meta']['reasons'] = array_slice( $this->runs->results[2]['meta']['reasons'], 0, 1 );
+
+		$runner->accept_finding( $id, 'home', 'form:form:/' );
+		$this->assertSame( 1, $this->runs->results[2]['is_baseline'] );
+		$this->assertSame( 0, $this->runs->results[1]['is_baseline'] );
+
+		$runner->restore_finding( $id, 'home', 'form:form:/' );
+		$this->assertSame( 0, $this->runs->results[2]['is_baseline'] );
+		$this->assertSame( 1, $this->runs->results[1]['is_baseline'] );
+		$this->assertSame( 'red', $this->runs->results[2]['verdict'] );
+	}
+
+	public function test_a_rule_is_not_an_acceptable_finding(): void {
+		$runner = $this->runner();
+		$id     = $this->red_run_with_finding();
+		$this->runs->results[1]['meta']['reasons'][0]['acceptable'] = false;
+
+		$this->assertSame( 'axle_smoke_test_no_finding', $runner->accept_finding( $id, 'home', 'form:form:/' )->get_error_code() );
+	}
+
+	public function test_accepted_findings_reach_the_verdict_of_the_next_run(): void {
+		$runner = $this->runner();
+		Rules::accept( 'home', 'landmark:footer' );
+
+		$runner->start( 'cli', array( 'browser' => false ), 0 );
+
+		$this->assertSame( array( 'landmark:footer' ), $this->runs->results[1]['meta']['accepted'] );
+		$this->assertArrayNotHasKey( 'accepted', $this->runs->results[2]['meta'] );
 	}
 
 	public function test_merge_context_and_version_options(): void {

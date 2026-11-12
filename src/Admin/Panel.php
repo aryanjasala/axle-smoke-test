@@ -84,7 +84,7 @@ final class Panel implements Service {
 	public static function register_assets(): void {
 		Page::register_style();
 		wp_register_script( 'axle-smoke-test-lib', plugins_url( 'assets/smoke-lib.js', PLUGIN_FILE ), array(), VERSION, true );
-		wp_register_script( 'axle-smoke-test-runner', plugins_url( 'assets/runner.js', PLUGIN_FILE ), array( 'axle-smoke-test-lib', 'wp-api-fetch', 'wp-hooks', 'wp-i18n' ), VERSION, true );
+		wp_register_script( 'axle-smoke-test-runner', plugins_url( 'assets/runner.js', PLUGIN_FILE ), array( 'axle-smoke-test-lib', 'wp-api-fetch', 'wp-hooks', 'wp-i18n', 'wp-a11y' ), VERSION, true );
 		wp_set_script_translations( 'axle-smoke-test-runner', 'axle-smoke-test' );
 	}
 
@@ -170,7 +170,7 @@ final class Panel implements Service {
 
 		if ( $this->show ) {
 			$hidden = self::$pending ? '' : ' hidden';
-			echo '<div class="notice notice-info axle-ui ast-panel"' . esc_attr( $hidden ) . ' role="status" aria-live="polite">';
+			echo '<div class="notice notice-info axle-ui ast-panel"' . esc_attr( $hidden ) . ' role="status" aria-live="polite" aria-busy="false">';
 			echo '<p><strong>' . esc_html__( 'Smoke test', 'axle-smoke-test' ) . '</strong> <span class="spinner"></span><span class="ast-panel-status">';
 			echo self::$pending && 'waiting_browser' === self::$pending['status'] ? esc_html__( 'Waiting for a browser: checking your key pages in this one.', 'axle-smoke-test' ) : esc_html__( 'Checking your site after the change.', 'axle-smoke-test' );
 			echo '</span> <a class="ast-panel-link" href="' . esc_url( Page::url() ) . '" hidden>' . esc_html__( 'See the details', 'axle-smoke-test' ) . '</a></p>';

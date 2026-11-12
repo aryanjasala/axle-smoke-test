@@ -47,6 +47,30 @@ add_filter(
 
 add_filter( 'wp_is_application_passwords_available', '__return_true' );
 
+// A contact form in the footer while ast_fixture_form is 1: a page that is "fine" until the form goes.
+add_action(
+	'wp_footer',
+	function () {
+		if ( '1' === (string) get_option( 'ast_fixture_form' ) ) {
+			echo '<form action="/contact/" method="post"><label>Email <input name="e"></label><button type="button">Send</button></form>';
+		}
+	}
+);
+
+// A second language while ast_fixture_languages is set, as a language plugin would report it.
+add_filter(
+	'axle_smoke_test_languages',
+	function ( $languages ) {
+		if ( ! get_option( 'ast_fixture_languages' ) ) {
+			return $languages;
+		}
+		return array(
+			array( 'code' => 'en', 'label' => 'English', 'home' => home_url( '/' ), 'default' => true ),
+			array( 'code' => 'de', 'label' => 'Deutsch', 'home' => home_url( '/?ast_lang=de' ), 'default' => false ),
+		);
+	}
+);
+
 /**
  * The folder of a fixture version.
  */
@@ -176,11 +200,17 @@ function ast_fixture_seed() {
 					array( 'level' => 'red', 'code' => 'fatal', 'message' => 'Fatal error: Uncaught Error: Call to undefined function smoke_fixture_missing_function() in wp-content/plugins/smoke-fixture/smoke-fixture.php on line 26', 'source' => 'plugin:smoke-fixture' ),
 					array( 'level' => 'red', 'code' => 'status', 'message' => 'HTTP 500, expected ' . implode( ', ', $url['expected'] ) . '.', 'source' => '' ),
 				);
+				if ( 'home' === $url['key'] ) {
+					$reasons[] = array( 'level' => 'red', 'code' => 'structure_form', 'message' => 'The page no longer has a form that sends to /contact/. It had 1.', 'source' => '', 'sig' => 'form:form:/contact/', 'acceptable' => true );
+				}
 			}
 			if ( 'amber' === $verdict && 'home' === $url['key'] ) {
 				$result  = 'amber';
 				$php     = array( array( 'type' => 'warning', 'message' => 'Undefined array key "layout"', 'file' => $fixture, 'line' => 18, 'source' => 'plugin:smoke-fixture' ) );
-				$reasons = array( array( 'level' => 'amber', 'code' => 'php_error', 'message' => 'New PHP warning: Undefined array key "layout"', 'source' => 'plugin:smoke-fixture' ) );
+				$reasons = array(
+					array( 'level' => 'amber', 'code' => 'php_error', 'message' => 'New PHP warning: Undefined array key "layout"', 'source' => 'plugin:smoke-fixture' ),
+					array( 'level' => 'amber', 'code' => 'structure_count', 'message' => 'The page has far fewer links: about 12 now, about 35 before.', 'source' => '', 'sig' => 'count:links', 'acceptable' => true ),
+				);
 			}
 			$runs->add_result(
 				array(

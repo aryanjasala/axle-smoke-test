@@ -6,7 +6,7 @@ A run checks every key URL in up to three tiers, and says which tier found what.
 
 | Tier | Where it runs | What it finds |
 | --- | --- | --- |
-| Server | A loopback request from the site to itself, from cron, WP-CLI, the REST API or the screen | Status and redirect, time, size, fatal errors (core's scrape check, as the auto-update rollback uses), PHP warnings and notices, core's critical error page, blank pages, missing same-origin scripts and stylesheets, landmark counts, a hash of the normalised HTML and a fingerprint of the visible text |
+| Server | A loopback request from the site to itself, from cron, WP-CLI, the REST API or the screen | Status and redirect, time, size, fatal errors (core's scrape check, as the auto-update rollback uses), PHP warnings and notices, core's critical error page, blank pages, missing same-origin scripts and stylesheets, landmark counts, a structure fingerprint of the page, a hash of the normalised HTML and a fingerprint of the visible text |
 | Browser | A hidden same-origin frame in an admin's browser, on the Smoke Test screen, the update screens, or any admin page while a run waits | JavaScript errors, unhandled promise rejections, `console.error`, CSP violations, files and images that failed, and the position, size and visibility of the landmarks |
 | Worker | Your own machine or CI, through the REST API (see below) | Whatever it uploads: the same fields as the browser tier, plus a PNG screenshot |
 
@@ -28,16 +28,28 @@ With `DISABLE_WP_CRON`, a queued run starts at the end of the request that cause
 
 ### Key URLs
 
-Picked from the site (each type can be switched off): the home page, the latest post, the latest page that is not the front page, the busiest category, a search, a page that does not exist (expects 404), the feed, the REST API index, the login page, the dashboard and the Plugins screen. With WooCommerce also the shop, the latest product, the cart, checkout (expects 200 or 302 with an empty cart) and my account. You add your own with expected statuses, up to 25 URLs in total.
+Picked from the site (each type can be switched off): the home page, the latest post, the latest page that is not the front page, the busiest category, a search, a page that does not exist (expects 404), the feed, the REST API index, the login page, the dashboard and the Plugins screen. With WooCommerce also the shop, a product that is in stock, the cart, checkout (expects 200 or 302 with an empty cart) and my account, each with rules for what it must render (the product an Add to cart control, the cart and checkout their block or shortcode output, not raw shortcode text). You add your own with expected statuses, up to 25 URLs in total.
 
 wp-admin URLs open as a signed-in user: the admin who pressed Run now, or for cron and WP-CLI runs the cron user from the settings, when "wp-admin checks from cron" is on (off by default). Without a user they are checked as "sends a signed-out visitor to the login page".
+
+### Structure and rules
+
+At baseline each HTML page gets a fingerprint, read with PHP's DOMDocument (no extra dependency; without the dom extension the older tag counts are used): which of header, nav, main and footer it has, its title and h1, the forms and where each posts (search and login forms are told apart), Add to cart controls, the number of links in the menu, and bucketed counts of links, images and buttons and of the text size. Buckets keep small content changes from flapping the verdict.
+
+Each run compares with the baseline. A landmark, a form, an Add to cart control or the menu that disappeared is **red**, in words: "The page no longer has a form. It had 1." A count or the text that fell by more than half is **amber**. Each finding has a signature and can be accepted on its own (button, WP-CLI or ability): later runs stop reporting it for that URL until the URL gets a new baseline. Accepting the last open finding makes the page the new baseline, and Undo puts the old one back.
+
+Per URL you can add rules, one per line, under Settings. A rule is plain text (matched in the visible text, ignoring case) or a simple CSS selector: it starts with `.`, `#` or `[`, is a tag name such as `form` or `footer`, or starts with `css:`. Selectors support tags, `#id`, `.class`, `[attr]`, `[attr=value]`, `[attr*=value]`, `[attr^=value]`, `[attr$=value]`, descendant and child combinators and comma lists. Start a rule with `text:` to force text, for example `text:[woocommerce_cart]`. A page that breaks a rule is red, from the first run. The browser tier also checks that each required selector is visible.
+
+### Suggested pages
+
+Shops and multilingual sites get a "Suggested pages" card on the Settings tab: the shop pages while the WooCommerce box is off, and with WPML, Polylang or TranslatePress the home page of each language (labelled with the language, checked for a header and a footer) and its shop, cart and checkout pages. One button adds them with their rules. Pages are only loaded: nothing is submitted, added to a cart or ordered.
 
 ### Verdicts
 
 | Verdict | When |
 | --- | --- |
-| Red | No response, an unexpected 4xx or 5xx, a fatal error, core's critical error page, a blank page (under 40 bytes of visible text by default), a broken feed or REST response |
-| Amber | New PHP warnings or notices, new JavaScript errors, new missing files or images, a landmark gone or hidden, a landmark moved or resized past 40 px, more than 60% of the visible text changed, or an unexpected status under 400 |
+| Red | A header, footer, menu, form or Add to cart control that was on the page at baseline is gone, a "must contain" or "must not contain" rule is broken, no response, an unexpected 4xx or 5xx, a fatal error, core's critical error page, a blank page (under 40 bytes of visible text by default), a broken feed or REST response |
+| Amber | New PHP warnings or notices, new JavaScript errors, new missing files or images, a count of links, images or buttons or the text size fell by half, a required element is hidden in the browser, a landmark moved or resized past 40 px, more than 60% of the visible text changed, or an unexpected status under 400 |
 | Green | None of the above, compared with the baseline |
 
 "New" means not in the baseline: the last green result for that URL and tier. A green result becomes the baseline by itself. After an intended change, such as a redesign, accept a run (or one URL of it) as the new baseline. Numbers in error messages are ignored when comparing, so a warning on a different line is not new.
@@ -46,7 +58,7 @@ Errors are blamed on a plugin, must-use plugin or theme by file path (PHP) or sc
 
 ### Rollback
 
-Before each plugin or theme update (`upgrader_pre_install`), the current folder is zipped into `wp-content/axle-smoke-test/backups/`. Folders over 100 MB are skipped, the last 2 backups per item are kept, for 14 days. The folder gets an `index.php`, an `.htaccess` deny rule and a `web.config`. On nginx, add:
+Before each plugin or theme update (`upgrader_pre_install`), the current folder is zipped into `wp-content/axle-smoke-test/backups/`. Folders over 100 MB are skipped, as is any zip when the disk has less than twice its size plus 50 MB free, the last 2 backups per item are kept, for 14 days, and all backups together stay under 500 MB (the oldest go first). Site Health checks that the newest zip cannot be downloaded from the web. The folder gets an `index.php`, an `.htaccess` deny rule and a `web.config`. On nginx, add:
 
 ```nginx
 location ^~ /wp-content/axle-smoke-test/ { deny all; }
@@ -68,7 +80,8 @@ When a run is red (or amber, if you ask): an email (the addresses in the setting
 
 | Filter | Arguments | Default |
 | --- | --- | --- |
-| `axle_smoke_test_capability` | `$capability` | `update_plugins`. Needed for the screen, the REST API, the abilities and the panel |
+| `axle_smoke_test_capability` | `$capability` | `update_plugins`. Needed for the screen, the REST API, the abilities and the panel. A rollback also needs `update_plugins` for a plugin or `update_themes` for a theme |
+| `axle_smoke_test_rollback_capability` | `$capability, $candidate` | `update_plugins` or `update_themes` |
 | `axle_smoke_test_auto_urls` | `$urls` | The URLs picked from the site |
 | `axle_smoke_test_urls` | `$urls` | The final list: picked plus your own |
 | `axle_smoke_test_max_urls` | `$max` | 25 (1 to 200) |
@@ -98,6 +111,15 @@ When a run is red (or amber, if you ask): an email (the addresses in the setting
 | `axle_smoke_test_admin_loopback_enabled` | `$enabled` | `true`. `false` checks wp-admin URLs as signed out only |
 | `axle_smoke_test_settle_ms` | `$ms` | 1500: the wait after `load` before the browser tier measures |
 | `axle_smoke_test_triggers` | `$triggers` | `update`, `install`, `theme`, `deploy`, from the settings |
+| `axle_smoke_test_structure_findings` | `$findings, $now, $base` | The findings of the structure check for one page |
+| `axle_smoke_test_structure_buckets` | `$edges` | 1, 2, 3, 4, 5, 8, 12, 20, 35 and on up to a million |
+| `axle_smoke_test_structure_drop_percent` | `$percent` | 50 (1 to 99): how far a count or the text may fall |
+| `axle_smoke_test_max_rules` | `$max` | 10 (1 to 50) rules of each kind per URL |
+| `axle_smoke_test_shop_pages` | `$pages` | The WooCommerce pages with their rules |
+| `axle_smoke_test_languages` | `$languages` | Languages from WPML, Polylang or TranslatePress |
+| `axle_smoke_test_suggestions` | `$suggestions` | The pages suggested for adding |
+| `axle_smoke_test_backups_total_max_bytes` | `$bytes` | 500 MB for all backups together |
+| `axle_smoke_test_get_started_steps` | `$steps` | The steps of the Get started card |
 
 Numbers are clamped and a filter that returns garbage falls back to the default. For example, to also check the shop's order tracking page and ignore a noisy warning:
 
@@ -130,6 +152,11 @@ add_filter( 'axle_smoke_test_ignored_php_errors', function ( $patterns ) {
 | `axle_smoke_test_deploy_detected` | `$changed, $items` | The code fingerprint changed outside WordPress |
 | `axle_smoke_test_purged` | `$counts` | Old runs and backups were deleted |
 | `axle_smoke_test_settings_saved` | `$settings, $old` | Settings were saved |
+| `axle_smoke_test_url_added` | `$entry` | A key URL was added |
+| `axle_smoke_test_url_removed` | `$key` | A key URL was removed |
+| `axle_smoke_test_rules_saved` | `$key, $rules` | The rules of a URL were saved |
+| `axle_smoke_test_finding_accepted` | `$run, $url_key, $sig, $accepted` | A finding was accepted, or taken back (`$accepted` false) |
+| `axle_smoke_test_suggestions_added` | `$added` | Suggested pages were added |
 
 ```php
 add_action( 'axle_smoke_test_run_finished', function ( $run ) {
@@ -143,7 +170,7 @@ add_action( 'axle_smoke_test_run_finished', function ( $run ) {
 
 | Hook | Kind | Arguments |
 | --- | --- | --- |
-| `axleSmokeTest.layoutSelectors` | filter | `selectors, url` |
+| `axleSmokeTest.layoutSelectors` | filter | `selectors, url` (`url.selectors` holds the page's required elements) |
 | `axleSmokeTest.ignoredJsErrors` | filter | `patterns, url` |
 | `axleSmokeTest.settleMs` | filter | `ms, url` |
 | `axleSmokeTest.collectResult` | filter | `data, url, run`: what is sent for one URL |
@@ -165,6 +192,10 @@ wp.hooks.addFilter( 'axleSmokeTest.ignoredJsErrors', 'my-site', ( patterns ) => 
 | `axle-smoke-test/get-run` | readonly | One run with every result and reason |
 | `axle-smoke-test/list-urls` | readonly | The key URLs |
 | `axle-smoke-test/accept-baseline` | idempotent | A run, or one URL of it, becomes the baseline |
+| `axle-smoke-test/set-url-rules` | idempotent | Replaces the must and must_not rules of a URL |
+| `axle-smoke-test/accept-finding` | idempotent | Accepts one finding of a URL (or takes it back with `accept: false`) |
+| `axle-smoke-test/list-suggestions` | readonly | Shop and language pages not on the list yet |
+| `axle-smoke-test/add-suggestions` | write | Adds suggested pages with their rules |
 | `axle-smoke-test/rollback-update` | destructive | Rolls back an item of a run. Refused without a backup, for core, and during a Read-Only Mode freeze |
 
 All need the `axle_smoke_test_capability` capability.
@@ -187,7 +218,10 @@ Routes under `/wp-json/axle-smoke-test/v1`, all for the same capability, with th
 | `/runs/<id>/rollback` | POST | Rolls back `item` |
 | `/runs/<id>/report` | GET | The run and its results as a JSON download |
 | `/results/<id>/thumbnail` | GET | A worker's screenshot |
-| `/urls` | GET | The key URLs |
+| `/urls` | GET | The key URLs, with their rules |
+| `/urls/<key>/rules` | POST | Sets `must` and `must_not` |
+| `/runs/<id>/findings` | POST | Accepts a finding: `url_key`, `sig`, `accept` (false takes it back) |
+| `/suggestions` | GET, POST | Lists the suggested pages, or adds them (`keys`) |
 
 A result's `data`: `js_errors` (each `message`, `url`, `line`, `kind`), `failed` (each `url`, `status`, `kind`), `layout` (selector => `x`, `y`, `w`, `h`, `visible`), `csp`, `load_ms`, `http_status`, `error`, and for a worker `thumbnail` (a base64 PNG under 2 MB). Lists are capped at 50 entries and texts at 500 characters.
 
@@ -205,6 +239,9 @@ SITE=https://example.com WP_USER=admin WP_APP_PASSWORD="abcd efgh ijkl mnop qrst
 | `wp axle-smoke-test list [--verdict=<v>] [--limit=<n>] [--format=<f>]` | Runs |
 | `wp axle-smoke-test show <id> [--format=<f>]` | One run |
 | `wp axle-smoke-test urls list\|add <url> [--expect=<statuses>] [--label=<l>] [--no-browser]\|remove <key>` | Key URLs |
+| `wp axle-smoke-test rules list\|set <key> [--must=<a\|b>] [--must-not=<a\|b>]\|clear <key>` | Rules of a URL, separated by a pipe |
+| `wp axle-smoke-test findings accept\|restore <run-id> <url-key> <sig>` | Accepts a finding, or takes it back |
+| `wp axle-smoke-test suggestions list\|add [<keys>]` | Suggested pages |
 | `wp axle-smoke-test baseline accept <run-id> [--url=<key>]` | Accepts a baseline |
 | `wp axle-smoke-test rollback <run-id> [--item=<plugin\|theme>] [--yes]` | Rolls back and runs again |
 | `wp axle-smoke-test backups list\|purge [--all]` | Backups |
@@ -229,9 +266,11 @@ wp plugin update --all && wp axle-smoke-test run --reason="$GIT_COMMIT" || exit 
 | What | Contents |
 | --- | --- |
 | `{prefix}axle_smoke_runs` table | One row per run: times, trigger, context (what changed, from and to versions, the URLs checked), status, verdict, tier flags, summary (counts, sources, version options changed, rollbacks) and the user who started it |
-| `{prefix}axle_smoke_results` table | One row per URL and tier: status, time, size, PHP and JavaScript errors, missing files, HTML hash, text fingerprint, landmarks, layout, thumbnail file, verdict, reasons and whether it is the baseline. Never the page HTML |
+| `{prefix}axle_smoke_results` table | One row per URL and tier: status, time, size, PHP and JavaScript errors, missing files, HTML hash, text fingerprint, landmarks, layout, thumbnail file, verdict, reasons and whether it is the baseline. Never the page HTML, only an outline of it (parts, form paths, bucketed counts, title and h1) |
 | `axle_smoke_test_settings` option | Settings, secrets encrypted |
 | `axle_smoke_test_urls` option | Your own key URLs |
+| `axle_smoke_test_rules`, `axle_smoke_test_accepted` options | Rules per URL, and the findings accepted per URL |
+| `axle_smoke_test_steps_dismissed` user meta | Hides the Get started card for that user |
 | `axle_smoke_test_fingerprint` option | The last code fingerprint |
 | `axle_smoke_test_backups` option | The backup index |
 | `axle_smoke_test_alert_log`, `axle_smoke_test_notice` options | Rate limiting, and the run the notice shows |
@@ -249,4 +288,5 @@ Cron events: `axle_smoke_test_run` (queued runs), `axle_smoke_test_deploy_check`
 - Without the early collector, PHP warnings raised while plugins that load before this one are loading are not seen, only fatal errors. `debug.log` is only read for a request whose collector could not run, since every other request writes to it too.
 - Rollback needs a backup made by this plugin, direct file access, and does not undo database changes.
 - Forms and checkout are loaded, never submitted.
+- The structure check reads the server's HTML. Elements a script adds later are only seen by the browser tier, and only for the selectors in a page's rules.
 - Loopback requests must work. If the host blocks them, runs fail and show core's loopback test result.

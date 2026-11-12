@@ -8,6 +8,8 @@
 namespace AryanX\Axle\SmokeTest\Rest;
 
 use AryanX\Axle\SmokeTest\Browser\Injector;
+use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\Structure;
 use AryanX\Axle\SmokeTest\Rollback;
 use AryanX\Axle\SmokeTest\Runner;
 use AryanX\Axle\SmokeTest\Service;
@@ -275,6 +277,80 @@ final class Controller implements Service {
 				'permission_callback' => $can,
 			)
 		);
+
+		$rule_list = array(
+			'type'    => 'array',
+			'items'   => array(
+				'type'      => 'string',
+				'maxLength' => 300,
+			),
+			'default' => array(),
+		);
+		register_rest_route(
+			self::NAMESPACE,
+			'/urls/(?P<key>[a-z0-9_-]+)/rules',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'set_rules' ),
+				'permission_callback' => $can,
+				'args'                => array(
+					'key'      => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'must'     => $rule_list,
+					'must_not' => $rule_list,
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/runs/(?P<id>\d+)/findings',
+			array(
+				'methods'             => 'POST',
+				'callback'            => array( $this, 'finding' ),
+				'permission_callback' => $can,
+				'args'                => $id + array(
+					'url_key' => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'sig'     => array(
+						'type'     => 'string',
+						'required' => true,
+					),
+					'accept'  => array(
+						'type'    => 'boolean',
+						'default' => true,
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/suggestions',
+			array(
+				array(
+					'methods'             => 'GET',
+					'callback'            => array( $this, 'list_suggestions' ),
+					'permission_callback' => $can,
+				),
+				array(
+					'methods'             => 'POST',
+					'callback'            => array( $this, 'add_suggestions' ),
+					'permission_callback' => $can,
+					'args'                => array(
+						'keys' => array(
+							'type'    => 'array',
+							'items'   => array( 'type' => 'string' ),
+							'default' => array(),
+						),
+					),
+				),
+			)
+		);
 	}
 
 	/**
@@ -506,6 +582,61 @@ final class Controller implements Service {
 	}
 
 	/**
+	 * POST /urls/<key>/rules: the rules of one key URL.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function set_rules( \WP_REST_Request $request ) {
+		$saved = $this->runner->urls()->set_rules(
+			sanitize_key( (string) $request['key'] ),
+			array(
+				'must'     => (array) $request['must'],
+				'must_not' => (array) $request['must_not'],
+			)
+		);
+
+		return is_wp_error( $saved ) ? $saved : new \WP_REST_Response( $saved );
+	}
+
+	/**
+	 * POST /runs/<id>/findings: accept a finding of the structure check, or take it back.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function finding( \WP_REST_Request $request ) {
+		$key = sanitize_key( (string) $request['url_key'] );
+		$sig = sanitize_text_field( (string) $request['sig'] );
+		$run = $request['accept']
+			? $this->runner->accept_finding( (int) $request['id'], $key, $sig )
+			: $this->runner->restore_finding( (int) $request['id'], $key, $sig );
+
+		return is_wp_error( $run ) ? $run : new \WP_REST_Response( $run );
+	}
+
+	/**
+	 * GET /suggestions: pages worth adding.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function list_suggestions(): \WP_REST_Response {
+		return new \WP_REST_Response( Presets::suggestions( $this->runner->urls() ) );
+	}
+
+	/**
+	 * POST /suggestions: adds suggested pages.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response|\WP_Error
+	 */
+	public function add_suggestions( \WP_REST_Request $request ) {
+		$added = Presets::add( $this->runner->urls(), array_map( 'sanitize_text_field', (array) $request['keys'] ) );
+
+		return is_wp_error( $added ) ? $added : new \WP_REST_Response( $added, 201 );
+	}
+
+	/**
 	 * The run, plus a browser token and URLs when it waits for a browser.
 	 *
 	 * @param array $run The run.
@@ -529,7 +660,7 @@ final class Controller implements Service {
 	 * The URLs of a run's browser tier.
 	 *
 	 * @param array $run The run.
-	 * @return array[] key, url, label.
+	 * @return array[] key, url, label, selectors.
 	 */
 	private function plan_urls( array $run ): array {
 		$urls = array();
@@ -537,9 +668,11 @@ final class Controller implements Service {
 			$url = $this->runner->urls()->find( (string) $key );
 			if ( $url ) {
 				$urls[] = array(
-					'key'   => $url['key'],
-					'url'   => $url['url'],
-					'label' => $url['label'],
+					'key'       => $url['key'],
+					'url'       => $url['url'],
+					'label'     => $url['label'],
+					// Elements a rule says must be on the page: the browser also checks that a visitor can see them.
+					'selectors' => Structure::selectors( (array) ( $url['rules']['must'] ?? array() ) ),
 				);
 			}
 		}

@@ -89,6 +89,30 @@ class Rollback implements Service {
 	}
 
 	/**
+	 * Whether a user may change the plugin or theme a rollback touches. The
+	 * smoke test capability lets someone see and run checks; putting files
+	 * back is as much a change as updating them, so it needs update_plugins
+	 * for a plugin and update_themes for a theme.
+	 *
+	 * @param array $candidate One of candidates().
+	 * @param int   $user_id   User.
+	 * @return bool
+	 */
+	public static function may_roll_back( array $candidate, int $user_id ): bool {
+		$capability = 'theme' === ( $candidate['type'] ?? '' ) ? 'update_themes' : 'update_plugins';
+
+		/**
+		 * Filters the capability needed to roll back one plugin or theme, on top of the smoke test capability.
+		 *
+		 * @param string $capability update_plugins for a plugin, update_themes for a theme.
+		 * @param array  $candidate  type, id, name, current, version, backup.
+		 */
+		$capability = (string) apply_filters( 'axle_smoke_test_rollback_capability', $capability, $candidate );
+
+		return '' !== $capability && user_can( $user_id, $capability );
+	}
+
+	/**
 	 * Rolls back an item of a run and runs the smoke test again.
 	 *
 	 * @param int    $run_id  Run ID.
@@ -119,6 +143,10 @@ class Rollback implements Service {
 		}
 		if ( ! $chosen ) {
 			return new \WP_Error( 'axle_smoke_test_pick_item', __( 'Say which plugin or theme to roll back.', 'axle-smoke-test' ), array( 'status' => 400 ) );
+		}
+
+		if ( $user_id > 0 && ! self::may_roll_back( $chosen, $user_id ) ) {
+			return new \WP_Error( 'axle_smoke_test_forbidden', __( 'You are not allowed to change this plugin or theme.', 'axle-smoke-test' ), array( 'status' => 403 ) );
 		}
 
 		/**

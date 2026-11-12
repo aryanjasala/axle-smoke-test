@@ -90,4 +90,33 @@ final class UrlsTest extends SmokeTestCase {
 		$this->assertSame( array( 200 ), Urls::statuses( 'nonsense' ) );
 		$this->assertSame( array( 404 ), Urls::statuses( array( '404' ) ) );
 	}
+
+	public function test_rules_built_in_and_saved_are_merged_and_forgotten_with_the_url(): void {
+		$this->options['axle_smoke_test_settings'] = array( 'auto_pick' => array_fill_keys( Urls::AUTO_TYPES, false ) );
+		$urls                                      = $this->urls();
+		$item                                      = $urls->add( '/contact/', array( 200 ), true, 'Contact', array( 'must' => array( 'form#contact' ) ) );
+
+		$found = $urls->find( $item['key'] );
+		$this->assertSame( array( 'form#contact' ), $found['rules']['must'] );
+		$this->assertSame( array( 'form#contact' ), $found['own_rules']['must'] );
+
+		$saved = $urls->set_rules( $item['key'], array( 'must_not' => 'Fatal error' ) );
+		$this->assertSame( array( 'Fatal error' ), $saved['must_not'] );
+		$this->assertSame( array( 'Fatal error' ), $urls->find( $item['key'] )['rules']['must_not'] );
+		$this->assertSame( 'axle_smoke_test_no_url', $urls->set_rules( 'nope', array() )->get_error_code() );
+
+		$this->assertTrue( $urls->remove( $item['key'] ) );
+		$this->assertArrayNotHasKey( $item['key'], $this->options['axle_smoke_test_rules'] );
+	}
+
+	public function test_the_list_is_built_once_per_request_until_it_is_flushed(): void {
+		Filters\expectApplied( 'axle_smoke_test_urls' )->twice()->andReturnFirstArg();
+		$urls = $this->urls();
+
+		$urls->all();
+		$urls->all();
+		$urls->find( 'home' );
+		$urls->flush();
+		$urls->all();
+	}
 }

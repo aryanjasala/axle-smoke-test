@@ -60,7 +60,9 @@
 				}
 				if ( 'ready' === event.data.axleSmoke ) {
 					window.clearTimeout( readyTimer );
-					const selectors = hooks().applyFilters( 'axleSmokeTest.layoutSelectors', config.selectors.slice(), url );
+					// The elements this page's rules say must be there are measured too: in the DOM is not enough, a visitor must see them.
+					const own = ( url.selectors || [] ).filter( ( selector ) => ! config.selectors.includes( selector ) );
+					const selectors = hooks().applyFilters( 'axleSmokeTest.layoutSelectors', config.selectors.concat( own ), url );
 					const settleMs = Number( hooks().applyFilters( 'axleSmokeTest.settleMs', config.settleMs, url ) ) || 0;
 					frame.contentWindow.postMessage( { axleSmoke: 'config', selectors, settleMs }, window.location.origin );
 				} else if ( 'result' === event.data.axleSmoke ) {
@@ -131,6 +133,9 @@
 		if ( spinner ) {
 			spinner.classList.toggle( 'is-active', busy );
 		}
+		if ( ! busy ) {
+			box.classList.remove( 'ast-busy' );
+		}
 	}
 
 	/**
@@ -160,6 +165,9 @@
 			counts.green || 0
 		);
 		status.appendChild( text );
+		if ( wp.a11y ) {
+			wp.a11y.speak( ( VERDICTS[ verdict ] || verdict ) + '. ' + text.textContent.trim(), 'polite' );
+		}
 		const link = box.querySelector( '.ast-panel-link' );
 		if ( link ) {
 			link.href = config.screenUrl + '&run=' + run.id;
@@ -206,7 +214,11 @@
 	function showError( box, error ) {
 		setBusy( box, false );
 		box.dataset.verdict = 'error';
-		box.querySelector( '.ast-panel-status' ).textContent = ( error && error.message ) || __( 'The smoke test could not run.', 'axle-smoke-test' );
+		const message = ( ( error && error.message ) || __( 'The smoke test could not run.', 'axle-smoke-test' ) ) + ' ' + __( 'Check that the REST API is reachable and that you are still signed in, then run the smoke test again.', 'axle-smoke-test' );
+		box.querySelector( '.ast-panel-status' ).textContent = message;
+		if ( wp.a11y ) {
+			wp.a11y.speak( message, 'assertive' );
+		}
 	}
 
 	/** Tools > Smoke Test: Run now. */

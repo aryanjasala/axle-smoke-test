@@ -10,6 +10,7 @@ namespace AryanX\Axle\SmokeTest\Cli;
 use AryanX\Axle\SmokeTest\Admin\Display;
 use AryanX\Axle\SmokeTest\Backups;
 use AryanX\Axle\SmokeTest\Cleanup;
+use AryanX\Axle\SmokeTest\Presets;
 use AryanX\Axle\SmokeTest\Rollback;
 use AryanX\Axle\SmokeTest\Runner;
 use AryanX\Axle\SmokeTest\Urls;
@@ -275,9 +276,165 @@ final class Command {
 				'expected' => implode( ',', $url['expected'] ),
 				'browser'  => $url['browser'] ? 'yes' : 'no',
 				'source'   => $url['source'],
+				'rules'    => count( $url['rules']['must'] ) + count( $url['rules']['must_not'] ),
 			);
 		}
-		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'key', 'label', 'url', 'expected', 'browser', 'source' ) );
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'key', 'label', 'url', 'expected', 'browser', 'source', 'rules' ) );
+	}
+
+	/**
+	 * Lists, sets or clears the rules of a key URL: text or CSS selectors the page must or must not contain.
+	 *
+	 * A page that breaks a rule turns red. A rule is plain text, or a simple
+	 * CSS selector such as .buy-button or form#contact. Start a rule with
+	 * "text:" to force text, for example text:[woocommerce_cart].
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : list, set or clear.
+	 *
+	 * [<url-key>]
+	 * : The key of the URL (see `wp axle-smoke-test urls list`). Needed for set and clear.
+	 *
+	 * [--must=<rules>]
+	 * : For set: rules the page must contain, separated by a pipe (|).
+	 *
+	 * [--must-not=<rules>]
+	 * : For set: rules the page must not contain, separated by a pipe (|).
+	 *
+	 * [--format=<format>]
+	 * : For list: table, csv, json or yaml. Default table.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp axle-smoke-test rules set url-1a2b3c4d --must="form#contact|Send message" --must-not="Fatal error"
+	 *     wp axle-smoke-test rules clear url-1a2b3c4d
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function rules( $args, $assoc_args ): void {
+		$action = (string) ( $args[0] ?? 'list' );
+		$key    = sanitize_key( (string) ( $args[1] ?? '' ) );
+		$urls   = $this->runner->urls();
+
+		if ( 'set' === $action || 'clear' === $action ) {
+			$saved = $urls->set_rules(
+				$key,
+				'clear' === $action ? array() : array(
+					'must'     => explode( '|', (string) ( $assoc_args['must'] ?? '' ) ),
+					'must_not' => explode( '|', (string) ( $assoc_args['must-not'] ?? '' ) ),
+				)
+			);
+			if ( is_wp_error( $saved ) ) {
+				\WP_CLI::error( $saved->get_error_message() );
+			}
+			\WP_CLI::success( sprintf( '%d rules saved for %s.', count( $saved['must'] ) + count( $saved['must_not'] ), $key ) );
+			return;
+		}
+		if ( 'list' !== $action ) {
+			\WP_CLI::error( 'Use list, set or clear.' );
+		}
+
+		$rows = array();
+		foreach ( $urls->all() as $url ) {
+			foreach ( array(
+				'must'     => 'must contain',
+				'must_not' => 'must not contain',
+			) as $kind => $label ) {
+				foreach ( (array) ( $url['rules'][ $kind ] ?? array() ) as $rule ) {
+					$rows[] = array(
+						'url'  => $url['key'],
+						'kind' => $label,
+						'rule' => $rule,
+					);
+				}
+			}
+		}
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'url', 'kind', 'rule' ) );
+	}
+
+	/**
+	 * Accepts a finding of the structure check for a URL, or takes it back.
+	 *
+	 * The signature is the `sig` of the finding, shown by `wp axle-smoke-test show <id> --format=json`.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : accept or restore.
+	 *
+	 * <run-id>
+	 * : Run ID.
+	 *
+	 * <url-key>
+	 * : The URL's key.
+	 *
+	 * <sig>
+	 * : The finding's signature, for example landmark:footer.
+	 *
+	 * @param array $args Positional arguments.
+	 */
+	public function findings( $args ): void {
+		$action = (string) ( $args[0] ?? '' );
+		if ( ! in_array( $action, array( 'accept', 'restore' ), true ) ) {
+			\WP_CLI::error( 'Use: wp axle-smoke-test findings accept|restore <run-id> <url-key> <sig>' );
+		}
+		$run_id = (int) ( $args[1] ?? 0 );
+		$key    = sanitize_key( (string) ( $args[2] ?? '' ) );
+		$sig    = sanitize_text_field( (string) ( $args[3] ?? '' ) );
+		$run    = 'accept' === $action ? $this->runner->accept_finding( $run_id, $key, $sig ) : $this->runner->restore_finding( $run_id, $key, $sig );
+		if ( is_wp_error( $run ) ) {
+			\WP_CLI::error( $run->get_error_message() );
+		}
+		\WP_CLI::success( sprintf( 'Finding %s. Run #%d is now %s.', 'accept' === $action ? 'accepted' : 'restored', $run_id, '' !== $run['verdict'] ? $run['verdict'] : $run['status'] ) );
+	}
+
+	/**
+	 * Lists or adds the pages a shop or a multilingual site depends on.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : list or add.
+	 *
+	 * [<keys>]
+	 * : For add: suggestion keys, comma separated. Default: all of them.
+	 *
+	 * [--format=<format>]
+	 * : For list: table, csv, json or yaml. Default table.
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function suggestions( $args, $assoc_args ): void {
+		$action = (string) ( $args[0] ?? 'list' );
+		$urls   = $this->runner->urls();
+
+		if ( 'add' === $action ) {
+			$added = Presets::add( $urls, array_filter( array_map( 'trim', explode( ',', (string) ( $args[1] ?? '' ) ) ) ) );
+			if ( is_wp_error( $added ) ) {
+				\WP_CLI::error( $added->get_error_message() );
+			}
+			\WP_CLI::success( sprintf( 'Added %d pages.', count( $added ) ) );
+			return;
+		}
+		if ( 'list' !== $action ) {
+			\WP_CLI::error( 'Use list or add.' );
+		}
+
+		$rows = array();
+		foreach ( Presets::suggestions( $urls ) as $suggestion ) {
+			$rows[] = array(
+				'key'    => $suggestion['key'],
+				'label'  => $suggestion['label'],
+				'url'    => $suggestion['url'],
+				'group'  => $suggestion['group'],
+				'reason' => $suggestion['reason'],
+			);
+		}
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'key', 'label', 'url', 'group', 'reason' ) );
 	}
 
 	/**

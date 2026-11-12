@@ -58,6 +58,10 @@ final class SiteHealth implements Service {
 			'label' => __( 'Last smoke test', 'axle-smoke-test' ),
 			'test'  => array( $this, 'run' ),
 		);
+		$tests['direct']['axle_smoke_test_backups_private'] = array(
+			'label' => __( 'Smoke test backups are private', 'axle-smoke-test' ),
+			'test'  => array( $this, 'backups_private' ),
+		);
 
 		return $tests;
 	}
@@ -116,6 +120,50 @@ final class SiteHealth implements Service {
 			$result['status']      = 'recommended';
 			$result['label']       = __( 'Smoke test backups cannot be written', 'axle-smoke-test' );
 			$result['description'] = '<p>' . esc_html__( 'wp-content/axle-smoke-test/backups is not writable, so updates cannot be rolled back.', 'axle-smoke-test' ) . '</p>';
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Whether a backup zip can be downloaded from the web. Apache and IIS obey the
+	 * deny rules in the folder; nginx ignores them and needs a location block.
+	 *
+	 * @return array
+	 */
+	public function backups_private(): array {
+		$result = array(
+			'label'       => __( 'Smoke test backups cannot be downloaded', 'axle-smoke-test' ),
+			'status'      => 'good',
+			'badge'       => array(
+				'label' => __( 'Security', 'axle-smoke-test' ),
+				'color' => 'blue',
+			),
+			'description' => '<p>' . esc_html__( 'The zips made before updates sit in a folder the web server refuses to serve.', 'axle-smoke-test' ) . '</p>',
+			'actions'     => '',
+			'test'        => 'axle_smoke_test_backups_private',
+		);
+
+		$backups = Backups::all();
+		$latest  = $backups ? end( $backups ) : null;
+		if ( ! $latest || ! file_exists( Backups::path( $latest ) ) ) {
+			return $result;
+		}
+
+		$url      = content_url( '/axle-smoke-test/backups/' . rawurlencode( basename( (string) $latest['file'] ) ) );
+		$response = wp_remote_head(
+			$url,
+			array(
+				'timeout'     => 5, // phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- One HEAD request to this site's own folder.
+				'redirection' => 0,
+				'sslverify'   => (bool) apply_filters( 'https_local_ssl_verify', false ), // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Core's own filter.
+			)
+		);
+		if ( ! is_wp_error( $response ) && 200 === (int) wp_remote_retrieve_response_code( $response ) ) {
+			$result['status']      = 'critical';
+			$result['label']       = __( 'Smoke test backups can be downloaded by anyone', 'axle-smoke-test' );
+			$result['description'] = '<p>' . esc_html__( 'The zips of your plugins and themes, made before updates, are served by the web server. They can hold code and settings you do not want public. Add a rule that denies wp-content/axle-smoke-test/ (the nginx location block is in the documentation), then run this test again. Until then, delete the backups.', 'axle-smoke-test' ) . '</p>';
+			$result['actions']     = '<p><a href="https://axlewp.com/plugins/axle-smoke-test/">' . esc_html__( 'Read the documentation', 'axle-smoke-test' ) . '</a></p>';
 		}
 
 		return $result;
