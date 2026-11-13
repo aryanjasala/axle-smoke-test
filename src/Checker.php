@@ -93,7 +93,15 @@ class Checker {
 		$expected = $url['expected'];
 		$session  = null;
 		$mode     = 'public';
-		if ( $url['auth'] ) {
+		$problem  = null;
+		if ( ! empty( $url['as_role'] ) ) {
+			// A test user of the chosen role, never a real person's account.
+			$mode    = 'role';
+			$user_id = RoleUser::ensure( (string) $url['as_role'] );
+			$user_id = is_wp_error( $user_id ) ? 0 : $user_id;
+			$session = $user_id ? AdminSession::create( $user_id, $url['url'], true ) : null;
+			$problem = $session ? null : new \WP_Error( 'axle_smoke_test_role_session', __( 'The test user could not be signed in, so this page was not checked. Check that wp-admin checks are allowed and that the role still exists.', 'axle-smoke-test' ) );
+		} elseif ( $url['auth'] ) {
 			$session = AdminSession::create( $user_id, $url['url'] );
 			if ( ! $session ) {
 				// Without a login, a wp-admin screen should send the visitor to the login page.
@@ -137,7 +145,7 @@ class Checker {
 		$offset = DebugLog::offset();
 		$start  = microtime( true );
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- A loopback to this site, which is the whole check; never cached.
-		$response = wp_remote_get( $request_url, $args );
+		$response = $problem ? $problem : wp_remote_get( $request_url, $args );
 		$elapsed  = (int) round( ( microtime( true ) - $start ) * 1000 );
 
 		if ( $session ) {

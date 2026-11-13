@@ -59,6 +59,9 @@ final class Settings {
 			'retention_runs'    => 200,
 			'daily'             => false,
 			'triggers'          => self::TRIGGERS,
+			'role_checks'       => false,
+			'role_check_role'   => 'subscriber',
+			'role_check_pages'  => RoleUser::PAGES,
 		);
 	}
 
@@ -192,6 +195,9 @@ final class Settings {
 			'retention_runs'    => $int( 'retention_runs', 10, 100000 ),
 			'daily'             => $bool( 'daily' ),
 			'triggers'          => $triggers,
+			'role_checks'       => $bool( 'role_checks' ),
+			'role_check_role'   => isset( $value['role_check_role'] ) && '' !== sanitize_key( (string) $value['role_check_role'] ) ? substr( sanitize_key( (string) $value['role_check_role'] ), 0, 40 ) : $defaults['role_check_role'],
+			'role_check_pages'  => isset( $value['role_check_pages'] ) && is_array( $value['role_check_pages'] ) ? array_values( array_unique( array_map( 'sanitize_key', array_filter( $value['role_check_pages'], 'is_string' ) ) ) ) : $defaults['role_check_pages'],
 		);
 	}
 

@@ -109,6 +109,38 @@
       ]
     },
     {
+      "name": "Settings with checks as a role switched on",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "wp": [
+            "axle-smoke-test",
+            "role-checks",
+            "on",
+            "--role=editor"
+          ]
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&tab=settings",
+      "steps": [
+        {
+          "waitFor": "#ast-roles"
+        }
+      ],
+      "cleanup": [
+        {
+          "wp": [
+            "axle-smoke-test",
+            "role-checks",
+            "off"
+          ]
+        }
+      ]
+    },
+    {
       "name": "Checking your site panel with its verdict",
       "setup": [
         {

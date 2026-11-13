@@ -380,6 +380,12 @@ final class Urls {
 			}
 		}
 
+		if ( $this->settings->get( 'role_checks' ) ) {
+			foreach ( RoleUser::urls( (string) $this->settings->get( 'role_check_role' ), (array) $this->settings->get( 'role_check_pages' ) ) as $entry ) {
+				$urls[] = $entry;
+			}
+		}
+
 		/**
 		 * Filters the URLs picked from the site, before the admin's own are added.
 		 *
@@ -422,6 +428,11 @@ final class Urls {
 		);
 		if ( ! empty( $url['group'] ) ) {
 			$entry['group'] = sanitize_key( (string) $url['group'] );
+		}
+		if ( ! empty( $url['as_role'] ) ) {
+			// Checked as the test user of this role (see RoleUser): rendering only, never in the browser.
+			$entry['as_role'] = sanitize_key( (string) $url['as_role'] );
+			$entry['browser'] = false;
 		}
 
 		/**

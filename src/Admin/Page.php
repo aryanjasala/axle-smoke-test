@@ -10,6 +10,7 @@ namespace AryanX\Axle\SmokeTest\Admin;
 use AryanX\Axle\SmokeTest\Backups;
 use AryanX\Axle\SmokeTest\Family;
 use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\RoleUser;
 use AryanX\Axle\SmokeTest\Rules;
 use AryanX\Axle\SmokeTest\MuPlugin;
 use AryanX\Axle\SmokeTest\Rollback;
@@ -879,12 +880,21 @@ final class Page implements Service {
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.NonceVerification.Missing -- Checked in verify(); every field is sanitised in Settings::sanitize().
 		$posted = isset( $_POST['settings'] ) && is_array( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
 		$posted = SettingsView::from_form( (array) $posted );
+		$role   = array(
+			'on'    => ! empty( $posted['role_checks'] ),
+			'role'  => (string) ( $posted['role_check_role'] ?? '' ),
+			'pages' => (array) $posted['role_check_pages'],
+		);
+		// The test user and its settings are handled apart, with their own capability checks.
+		unset( $posted['role_checks'], $posted['role_check_role'], $posted['role_check_pages'] );
 		$this->settings->update( $posted );
+		$result = RoleUser::configure( $this->settings, $role['on'], $role['role'], $role['pages'] );
 		$this->back(
 			array(
 				'tab'  => 'settings',
-				'done' => 'saved',
-			)
+				'done' => is_wp_error( $result ) ? '' : 'saved',
+			),
+			is_wp_error( $result ) ? $result : null
 		);
 	}
 

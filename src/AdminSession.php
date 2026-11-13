@@ -69,10 +69,15 @@ final class AdminSession implements Service {
 	 *
 	 * @param int    $user_id User ID.
 	 * @param string $url     The one URL the session may open.
+	 * @param bool   $as_test Whether the user is a test user of a role (see RoleUser), who has no capability to check.
 	 * @return array{cookies: array<string, string>, token: string}|null Null when the checks may not log in.
 	 */
-	public static function create( int $user_id, string $url ): ?array {
-		if ( $user_id <= 0 || ! self::enabled() || ! user_can( $user_id, Settings::capability() ) ) {
+	public static function create( int $user_id, string $url, bool $as_test = false ): ?array {
+		if ( $user_id <= 0 || ! self::enabled() ) {
+			return null;
+		}
+		// A real account needs the plugin capability; only the plugin's own test user may be a lesser role.
+		if ( $as_test ? ! RoleUser::is_test_user( $user_id ) : ! user_can( $user_id, Settings::capability() ) ) {
 			return null;
 		}
 

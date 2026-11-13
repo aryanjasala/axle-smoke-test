@@ -10,6 +10,7 @@ namespace AryanX\Axle\SmokeTest\Admin;
 use AryanX\Axle\SmokeTest\Crypto;
 use AryanX\Axle\SmokeTest\MuPlugin;
 use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\RoleUser;
 use AryanX\Axle\SmokeTest\Structure;
 use AryanX\Axle\SmokeTest\Settings;
 use AryanX\Axle\SmokeTest\Urls;
@@ -55,15 +56,16 @@ final class SettingsView {
 	 * @return array
 	 */
 	public static function from_form( array $posted ): array {
-		foreach ( array( 'browser_tier', 'email', 'notice', 'auto_rollback', 'cron_admin_checks', 'daily' ) as $box ) {
+		foreach ( array( 'browser_tier', 'email', 'notice', 'auto_rollback', 'cron_admin_checks', 'daily', 'role_checks' ) as $box ) {
 			$posted[ $box ] = ! empty( $posted[ $box ] );
 		}
 		$auto_pick = array();
 		foreach ( Urls::AUTO_TYPES as $type ) {
 			$auto_pick[ $type ] = ! empty( $posted['auto_pick'][ $type ] );
 		}
-		$posted['auto_pick'] = $auto_pick;
-		$posted['triggers']  = array_keys( array_filter( (array) ( $posted['triggers'] ?? array() ) ) );
+		$posted['auto_pick']        = $auto_pick;
+		$posted['role_check_pages'] = array_keys( array_filter( (array) ( $posted['role_check_pages'] ?? array() ) ) );
+		$posted['triggers']         = array_keys( array_filter( (array) ( $posted['triggers'] ?? array() ) ) );
 		foreach ( array( 'webhook_url', 'auth_pass' ) as $secret ) {
 			$posted[ $secret ] = isset( $posted[ $secret ] ) ? trim( (string) $posted[ $secret ] ) : '';
 		}
@@ -166,6 +168,8 @@ final class SettingsView {
 		$this->checkbox_row( 'notice', __( 'Admin notice', 'axle-smoke-test' ), __( 'Show a notice in wp-admin until it is dismissed or a green run follows.', 'axle-smoke-test' ), $s );
 		echo '</table>';
 		echo '</section>';
+
+		$this->role_card( $s );
 
 		echo '<section class="axle-card">';
 		echo '<h2 class="axle-card__title">' . esc_html__( 'Rollback', 'axle-smoke-test' ) . '</h2>';
@@ -347,6 +351,37 @@ final class SettingsView {
 		} else {
 			Page::post_button( 'mu_plugin', __( 'Install the early collector', 'axle-smoke-test' ), array( 'do' => 'install' ), 'button' );
 		}
+		echo '</section>';
+	}
+
+	/**
+	 * The card for checking pages as a role.
+	 *
+	 * @param array $s Settings.
+	 */
+	private function role_card( array $s ): void {
+		$roles = RoleUser::roles();
+		echo '<section class="axle-card" id="ast-roles">';
+		echo '<h2 class="axle-card__title">' . esc_html__( 'Check as a role', 'axle-smoke-test' ) . '</h2>';
+		echo '<p>' . esc_html__( 'Open the dashboard and account pages as a test user with the role you choose, to catch a page that breaks for editors or customers but not for admins. The user is made by this plugin, has no password and cannot sign in. It is removed when you switch this off or uninstall the plugin. Pages are only viewed: nothing is submitted.', 'axle-smoke-test' ) . '</p>';
+		echo '<table class="form-table" role="presentation">';
+		$this->checkbox_row( 'role_checks', __( 'Check as a role', 'axle-smoke-test' ), __( 'Check the pages below as a test user.', 'axle-smoke-test' ), $s );
+		echo '<tr><th scope="row"><label for="ast-role">' . esc_html__( 'Role', 'axle-smoke-test' ) . '</label></th><td><select id="ast-role" name="settings[role_check_role]">';
+		foreach ( $roles as $slug => $name ) {
+			printf( '<option value="%1$s"%2$s>%3$s</option>', esc_attr( (string) $slug ), selected( $s['role_check_role'], (string) $slug, false ), esc_html( translate_user_role( $name ) ) );
+		}
+		echo '</select></td></tr>';
+		echo '<tr><th scope="row">' . esc_html__( 'Pages', 'axle-smoke-test' ) . '</th><td><fieldset><legend class="screen-reader-text">' . esc_html__( 'Pages to check as the role', 'axle-smoke-test' ) . '</legend>';
+		foreach ( RoleUser::pages() as $name => $page ) {
+			printf(
+				'<label><input type="checkbox" name="settings[role_check_pages][%1$s]" value="1"%2$s> %3$s</label><br>',
+				esc_attr( (string) $name ),
+				checked( in_array( (string) $name, (array) $s['role_check_pages'], true ), true, false ),
+				esc_html( (string) $page['label'] )
+			);
+		}
+		echo '</fieldset></td></tr>';
+		echo '</table>';
 		echo '</section>';
 	}
 

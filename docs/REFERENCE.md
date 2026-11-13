@@ -44,6 +44,14 @@ Per URL you can add rules, one per line, under Settings. A rule is plain text (m
 
 Shops and multilingual sites get a "Suggested pages" card on the Settings tab: the shop pages while the WooCommerce box is off, and with WPML, Polylang or TranslatePress the home page of each language (labelled with the language, checked for a header and a footer) and its shop, cart and checkout pages. One button adds them with their rules. Pages are only loaded: nothing is submitted, added to a cart or ordered.
 
+### Checks as a role
+
+Some pages break for editors or customers and not for admins. Switch on "Check as a role" on the Settings tab, pick a role (every role but administrator) and the pages: the dashboard, the profile and, with WooCommerce, My account. Each run then opens them as a test user with that role and judges them like any other key URL, against their own baseline. Pages are only viewed: nothing is submitted, and they are not part of the browser tier.
+
+The test user belongs to the plugin and is never a real person's account. It has a random password nobody sees, and every password way in is refused for it (login, password reset, application passwords). The only way in is the same single-use login as the wp-admin checks: 60 seconds, one path, GET only. If a user with the test user's name exists and is not the plugin's, it is left alone and the check says so. Switching it on needs the permission to create users and to give the role. The user is removed when you switch the feature off, when you pick another role and when you uninstall the plugin.
+
+A role that WooCommerce or another plugin keeps out of wp-admin turns the dashboard red with its redirect: that is what a customer would see. Untick the page if it is meant.
+
 ### Verdicts
 
 | Verdict | When |
@@ -117,6 +125,8 @@ When a run is red (or amber, if you ask): an email (the addresses in the setting
 | `axle_smoke_test_max_rules` | `$max` | 10 (1 to 50) rules of each kind per URL |
 | `axle_smoke_test_shop_pages` | `$pages` | The WooCommerce pages with their rules |
 | `axle_smoke_test_languages` | `$languages` | Languages from WPML, Polylang or TranslatePress |
+| `axle_smoke_test_role_check_roles` | `$roles` | The roles pages can be checked as (every role but administrator) |
+| `axle_smoke_test_role_check_pages` | `$pages` | The pages checked as a role, each with a label, URL and rules |
 | `axle_smoke_test_suggestions` | `$suggestions` | The pages suggested for adding |
 | `axle_smoke_test_backups_total_max_bytes` | `$bytes` | 500 MB for all backups together |
 | `axle_smoke_test_get_started_steps` | `$steps` | The steps of the Get started card |
@@ -157,6 +167,8 @@ add_filter( 'axle_smoke_test_ignored_php_errors', function ( $patterns ) {
 | `axle_smoke_test_rules_saved` | `$key, $rules` | The rules of a URL were saved |
 | `axle_smoke_test_finding_accepted` | `$run, $url_key, $sig, $accepted` | A finding was accepted, or taken back (`$accepted` false) |
 | `axle_smoke_test_suggestions_added` | `$added` | Suggested pages were added |
+| `axle_smoke_test_role_user_created` | `$user_id, $role` | The test user for a role was made |
+| `axle_smoke_test_role_checks_changed` | `$on, $role` | Checks as a role were switched on or off |
 
 ```php
 add_action( 'axle_smoke_test_run_finished', function ( $run ) {
@@ -196,6 +208,8 @@ wp.hooks.addFilter( 'axleSmokeTest.ignoredJsErrors', 'my-site', ( patterns ) => 
 | `axle-smoke-test/accept-finding` | idempotent | Accepts one finding of a URL (or takes it back with `accept: false`) |
 | `axle-smoke-test/list-suggestions` | readonly | Shop and language pages not on the list yet |
 | `axle-smoke-test/add-suggestions` | write | Adds suggested pages with their rules |
+| `axle-smoke-test/get-role-checks` | readonly | Whether pages are checked as a role, which role and pages |
+| `axle-smoke-test/set-role-checks` | idempotent | Switches checks as a role on or off. Also needs the permission to create users and to give the role |
 | `axle-smoke-test/rollback-update` | destructive | Rolls back an item of a run. Refused without a backup, for core, and during a Read-Only Mode freeze |
 
 All need the `axle_smoke_test_capability` capability.
@@ -242,6 +256,7 @@ SITE=https://example.com WP_USER=admin WP_APP_PASSWORD="abcd efgh ijkl mnop qrst
 | `wp axle-smoke-test rules list\|set <key> [--must=<a\|b>] [--must-not=<a\|b>]\|clear <key>` | Rules of a URL, separated by a pipe |
 | `wp axle-smoke-test findings accept\|restore <run-id> <url-key> <sig>` | Accepts a finding, or takes it back |
 | `wp axle-smoke-test suggestions list\|add [<keys>]` | Suggested pages |
+| `wp axle-smoke-test role-checks status\|on [--role=<role>] [--pages=<a,b>]\|off` | Checks pages as a test user with a role |
 | `wp axle-smoke-test baseline accept <run-id> [--url=<key>]` | Accepts a baseline |
 | `wp axle-smoke-test rollback <run-id> [--item=<plugin\|theme>] [--yes]` | Rolls back and runs again |
 | `wp axle-smoke-test backups list\|purge [--all]` | Backups |
@@ -256,6 +271,7 @@ wp plugin update --all && wp axle-smoke-test run --reason="$GIT_COMMIT" || exit 
 ## Security
 
 - **The wp-admin login.** For a wp-admin URL, the run creates a WordPress session for the user that expires in 60 seconds (core stores only a hash of its token) and sends its login cookies with that one loopback. The session is marked with the one path it may open. Any other path, any method but GET or HEAD, `admin-post.php`, `admin-ajax.php` and the REST API are refused, and the session is destroyed after its first request. From cron and WP-CLI this only happens when you switch on "wp-admin checks from cron".
+- **The test user.** Checks as a role use one test user per chosen role, flagged with `axle_smoke_test_role_user` user meta. It has no usable password, cannot be given application passwords and is never an administrator by default. Its login is the same single-use session described above, so it cannot open another page or send a POST.
 - **Run tokens.** Loopbacks carry a random token in an `X-Axle-Smoke-Test` header, stored hashed for two minutes. It only switches on the PHP error collector for that request. Browser frames carry `?axle_smoke=<token>` (hashed, one hour), which only adds the collector script and hides the toolbar. Neither ever signs anyone in.
 - **Secrets.** The webhook URL and the basic-auth password are encrypted with a key derived from the site's salts, and never shown back in full.
 - **Files.** Backups and thumbnails sit behind deny rules and are only served to the capability, through PHP.
@@ -271,6 +287,7 @@ wp plugin update --all && wp axle-smoke-test run --reason="$GIT_COMMIT" || exit 
 | `axle_smoke_test_urls` option | Your own key URLs |
 | `axle_smoke_test_rules`, `axle_smoke_test_accepted` options | Rules per URL, and the findings accepted per URL |
 | `axle_smoke_test_steps_dismissed` user meta | Hides the Get started card for that user |
+| `axle_smoke_test_role_user` user meta | Marks the test user made for checks as a role. The user is deleted when the feature is switched off and on uninstall |
 | `axle_smoke_test_fingerprint` option | The last code fingerprint |
 | `axle_smoke_test_backups` option | The backup index |
 | `axle_smoke_test_alert_log`, `axle_smoke_test_notice` options | Rate limiting, and the run the notice shows |

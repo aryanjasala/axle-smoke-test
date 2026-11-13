@@ -79,6 +79,29 @@ if ( is_multisite() ) {
 	axle_smoke_test_uninstall_site();
 }
 
+// The test users of "check as a role", which belong to every site of the network.
+$axle_smoke_test_users = get_users(
+	array(
+		'blog_id'    => 0,
+		'meta_key'   => 'axle_smoke_test_role_user', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- A handful of users at most, on uninstall.
+		'meta_value' => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+		'fields'     => 'ID',
+	)
+);
+if ( $axle_smoke_test_users ) {
+	require_once ABSPATH . 'wp-admin/includes/user.php';
+	if ( is_multisite() ) {
+		require_once ABSPATH . 'wp-admin/includes/ms.php';
+	}
+	foreach ( $axle_smoke_test_users as $axle_smoke_test_user ) {
+		if ( is_multisite() ) {
+			wpmu_delete_user( (int) $axle_smoke_test_user );
+		} else {
+			wp_delete_user( (int) $axle_smoke_test_user );
+		}
+	}
+}
+
 // Shared by every site: the backups folder and the early must-use plugin.
 axle_smoke_test_uninstall_dir( WP_CONTENT_DIR . '/axle-smoke-test' );
 if ( file_exists( WPMU_PLUGIN_DIR . '/axle-smoke-test-early.php' ) ) {

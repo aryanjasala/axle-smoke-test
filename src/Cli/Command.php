@@ -11,6 +11,7 @@ use AryanX\Axle\SmokeTest\Admin\Display;
 use AryanX\Axle\SmokeTest\Backups;
 use AryanX\Axle\SmokeTest\Cleanup;
 use AryanX\Axle\SmokeTest\Presets;
+use AryanX\Axle\SmokeTest\RoleUser;
 use AryanX\Axle\SmokeTest\Rollback;
 use AryanX\Axle\SmokeTest\Runner;
 use AryanX\Axle\SmokeTest\Urls;
@@ -435,6 +436,64 @@ final class Command {
 			);
 		}
 		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), $rows, array( 'key', 'label', 'url', 'group', 'reason' ) );
+	}
+
+	/**
+	 * Shows, switches on or switches off checks as a role.
+	 *
+	 * Opens the dashboard, profile and account pages as a test user with the
+	 * chosen role. The user is made by the plugin, has no password and cannot
+	 * sign in. It is removed on off, when another role is chosen and on
+	 * uninstall. Pages are only viewed.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status, on or off. Default status.
+	 *
+	 * [--role=<role>]
+	 * : For on: the role slug, for example editor or customer. Default: the saved role.
+	 *
+	 * [--pages=<pages>]
+	 * : For on: comma separated pages to check: dashboard, profile, account. Default: the saved pages.
+	 *
+	 * [--format=<format>]
+	 * : For status: table, json or yaml. Default table.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp axle-smoke-test role-checks on --role=editor --pages=dashboard,profile
+	 *     wp axle-smoke-test role-checks off
+	 *
+	 * @subcommand role-checks
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function role_checks( $args, $assoc_args ): void {
+		$action   = (string) ( $args[0] ?? 'status' );
+		$settings = $this->runner->settings();
+
+		if ( 'on' === $action || 'off' === $action ) {
+			$pages = isset( $assoc_args['pages'] ) ? array_filter( array_map( 'trim', explode( ',', (string) $assoc_args['pages'] ) ) ) : null;
+			$saved = RoleUser::configure( $settings, 'on' === $action, (string) ( $assoc_args['role'] ?? '' ), $pages );
+			if ( is_wp_error( $saved ) ) {
+				\WP_CLI::error( $saved->get_error_message() );
+			}
+			\WP_CLI::success( 'on' === $action ? 'Checking as ' . $saved['role'] . '.' : 'Switched off. The test user was removed.' );
+			return;
+		}
+		if ( 'status' !== $action ) {
+			\WP_CLI::error( 'Use status, on or off.' );
+		}
+
+		$status = array(
+			'enabled' => $settings->get( 'role_checks' ) ? 'yes' : 'no',
+			'role'    => (string) $settings->get( 'role_check_role' ),
+			'pages'   => implode( ',', (array) $settings->get( 'role_check_pages' ) ),
+			'users'   => count( RoleUser::ids() ),
+		);
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), array( $status ), array_keys( $status ) );
 	}
 
 	/**

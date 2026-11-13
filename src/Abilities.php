@@ -393,6 +393,92 @@ final class Abilities implements Service {
 				'idempotent'  => false,
 			)
 		);
+
+		$this->ability(
+			'get-role-checks',
+			__( 'Get the checks as a role', 'axle-smoke-test' ),
+			__( 'Whether pages are checked as a test user with a role, which role and which pages. Nothing changes.', 'axle-smoke-test' ),
+			array(),
+			array( 'type' => 'object' ),
+			array( $this, 'get_role_checks' ),
+			$can,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'set-role-checks',
+			__( 'Switch checks as a role on or off', 'axle-smoke-test' ),
+			__( 'On: makes a test user with the chosen role (no password, cannot sign in) and checks the dashboard, profile and account pages as it, viewing only. Off: removes the test user. Needs the permission to create users and to give the role.', 'axle-smoke-test' ),
+			array(
+				'type'                 => 'object',
+				'properties'           => array(
+					'enabled' => array( 'type' => 'boolean' ),
+					'role'    => array(
+						'type'        => 'string',
+						'description' => __( 'Role slug, for example editor or customer. Empty keeps the saved role.', 'axle-smoke-test' ),
+					),
+					'pages'   => array(
+						'type'        => 'array',
+						'items'       => array(
+							'type' => 'string',
+							'enum' => RoleUser::PAGES,
+						),
+						'description' => __( 'Pages to check. Omit to keep the saved ones.', 'axle-smoke-test' ),
+					),
+				),
+				'required'             => array( 'enabled' ),
+				'additionalProperties' => false,
+			),
+			array( 'type' => 'object' ),
+			array( $this, 'set_role_checks' ),
+			array( $this, 'can_set_role_checks' ),
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => true,
+			)
+		);
+	}
+
+	/**
+	 * Whether the current user may switch checks as a role on or off.
+	 *
+	 * @return bool
+	 */
+	public function can_set_role_checks(): bool {
+		return $this->can() && current_user_can( 'create_users' );
+	}
+
+	/**
+	 * Reads the checks as a role.
+	 *
+	 * @return array
+	 */
+	public function get_role_checks(): array {
+		$settings = $this->runner->settings();
+
+		return array(
+			'enabled' => (bool) $settings->get( 'role_checks' ),
+			'role'    => (string) $settings->get( 'role_check_role' ),
+			'pages'   => (array) $settings->get( 'role_check_pages' ),
+			'users'   => count( RoleUser::ids() ),
+		);
+	}
+
+	/**
+	 * Switches the checks as a role on or off.
+	 *
+	 * @param array|null $input enabled, role, pages.
+	 * @return array|\WP_Error
+	 */
+	public function set_role_checks( $input = null ) {
+		$input = (array) $input;
+		$pages = isset( $input['pages'] ) ? array_map( 'sanitize_key', (array) $input['pages'] ) : null;
+
+		return RoleUser::configure( $this->runner->settings(), ! empty( $input['enabled'] ), sanitize_key( (string) ( $input['role'] ?? '' ) ), $pages );
 	}
 
 	/**
