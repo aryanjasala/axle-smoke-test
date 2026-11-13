@@ -382,6 +382,93 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		wp( 'option', 'delete', 'axle_smoke_test_rules' );
 	} );
 
+	test( 'checks as a role: a test user with no password opens the pages, view only, and goes away when switched off', async ( { page } ) => {
+		settleRuns();
+		await page.goto( `${ SCREEN }&tab=settings` );
+		const card = page.locator( '#ast-roles' );
+		await expect( card ).toContainText( 'has no password and cannot sign in' );
+		await card.getByLabel( 'Check the pages below as a test user.' ).check();
+		await card.getByLabel( 'Role' ).selectOption( 'editor' );
+		await page.getByRole( 'button', { name: 'Save settings' } ).click();
+		await expect( page.locator( '.notice-success' ) ).toContainText( 'Settings saved.' );
+
+		// One flagged user with the chosen role, never a real account.
+		expect( wp( 'user', 'get', 'axle-smoke-test-editor', '--field=roles' ) ).toBe( 'editor' );
+		expect( wp( 'user', 'meta', 'get', 'axle-smoke-test-editor', 'axle_smoke_test_role_user' ) ).toBe( '1' );
+		expect( wp( 'user', 'list', '--role=administrator', '--field=user_login' ).split( '\n' ) ).not.toContain( 'axle-smoke-test-editor' );
+
+		// Every password way in is refused, so the only way in is the single-use session.
+		expect( wpEval( '$u = wp_authenticate( "axle-smoke-test-editor", "anything" ); echo is_wp_error( $u ) ? $u->get_error_code() : "signed-in";' ) ).toBe( 'axle_smoke_test_no_login' );
+		expect( wpEval( 'echo wp_is_application_passwords_available_for_user( get_user_by( "login", "axle-smoke-test-editor" ) ) ? "yes" : "no";' ) ).toBe( 'no' );
+
+		// The pages are checked as the editor: an editor has no Plugins menu, an admin does.
+		wp( 'axle-smoke-test', 'rules', 'set', 'dashboard-as-editor', '--must=#wpbody-content|#menu-posts', '--must-not=#menu-plugins' );
+		wp( 'axle-smoke-test', 'run', '--urls=dashboard-as-editor,profile-as-editor' );
+		let run = getRun();
+		expect( run.verdict, problems( run ) ).toBe( 'green' );
+		expect( result( run, 'dashboard-as-editor' ) ).toMatchObject( { http_status: 200 } );
+		expect( result( run, 'dashboard-as-editor' ).meta ).toMatchObject( { auth_mode: 'role', label: 'Dashboard as Editor' } );
+		expect( result( run, 'profile-as-editor' ).http_status ).toBe( 200 );
+		// The sessions ended with their requests.
+		expect( wpEval( 'echo count( (array) get_user_meta( (int) get_user_by( "login", "axle-smoke-test-editor" )->ID, "session_tokens", true ) );' ) ).toBe( '0' );
+		expect( JSON.parse( wp( 'axle-smoke-test', 'role-checks', 'status', '--format=json' ) )[ 0 ] ).toMatchObject( { enabled: 'yes', role: 'editor', users: 1 } );
+
+		// The rule proves the page was not seen as an admin: asking for the admin menu fails.
+		wp( 'axle-smoke-test', 'rules', 'set', 'dashboard-as-editor', '--must=#menu-plugins' );
+		expect( wpStatus( 'axle-smoke-test', 'run', '--urls=dashboard-as-editor' ).code ).toBe( 1 );
+		wp( 'axle-smoke-test', 'rules', 'clear', 'dashboard-as-editor' );
+
+		// Another role swaps the user. Off removes it.
+		wp( 'axle-smoke-test', 'role-checks', 'on', '--role=subscriber', '--pages=dashboard' );
+		expect( wpStatus( 'user', 'get', 'axle-smoke-test-editor' ).code ).not.toBe( 0 );
+		expect( wp( 'user', 'get', 'axle-smoke-test-subscriber', '--field=roles' ) ).toBe( 'subscriber' );
+		wp( 'axle-smoke-test', 'run', '--urls=dashboard-as-subscriber' );
+		run = getRun();
+		expect( run.verdict, problems( run ) ).toBe( 'green' );
+		expect( wp( 'axle-smoke-test', 'urls', 'list', '--format=json' ) ).not.toContain( 'profile-as-subscriber' );
+
+		wp( 'axle-smoke-test', 'role-checks', 'off' );
+		expect( wp( 'user', 'list', '--meta_key=axle_smoke_test_role_user', '--format=count' ) ).toBe( '0' );
+		expect( wp( 'axle-smoke-test', 'urls', 'list', '--format=json' ) ).not.toContain( '-as-' );
+		wp( 'option', 'delete', 'axle_smoke_test_rules' );
+	} );
+
+	test( 'TranslatePress: each language home page is offered with its real URL and checked for a header and footer', async () => {
+		settleRuns();
+		const install = wpStatus( 'plugin', 'install', 'translatepress-multilingual', '--activate' );
+		test.skip( install.code !== 0, `TranslatePress could not be installed here: ${ install.out.slice( 0, 200 ) }` );
+
+		try {
+			wpEval( '$s = get_option( "trp_settings" ); $s["translation-languages"] = array( "en_US", "de_DE" ); $s["publish-languages"] = array( "en_US", "de_DE" ); $s["url-slugs"] = array( "en_US" => "en", "de_DE" => "de" ); update_option( "trp_settings", $s );' );
+			wp( 'rewrite', 'flush', '--hard' );
+
+			const suggestions = JSON.parse( wp( 'axle-smoke-test', 'suggestions', 'list', '--format=json' ) );
+			const german = suggestions.find( ( item ) => item.group === 'language' );
+			expect( german ).toBeTruthy();
+			expect( german.label ).toBe( 'Home page (DE)' );
+			expect( german.url ).toMatch( /\/de\/$/ );
+
+			wp( 'axle-smoke-test', 'suggestions', 'add' );
+			const saved = JSON.parse( wp( 'option', 'get', 'axle_smoke_test_urls', '--format=json' ) );
+			expect( saved ).toHaveLength( 1 );
+			wp( 'axle-smoke-test', 'run', `--urls=${ saved[ 0 ].key }` );
+			const run = getRun();
+			// TranslatePress 3.x raises its own PHP warnings while it has no translations yet, so amber is fair. Red would mean a missing page, header or footer.
+			expect( run.verdict, problems( run ) ).not.toBe( 'red' );
+			const checked = result( run, saved[ 0 ].key );
+			expect( ( checked.meta.reasons || [] ).filter( ( reason ) => reason.level === 'red' || /header|footer|no longer has/i.test( reason.message ) ) ).toEqual( [] );
+			expect( checked.http_status ).toBe( 200 );
+			expect( checked.meta.structure.landmarks ).toMatchObject( { header: 1, footer: 1 } );
+		} finally {
+			wpStatus( 'plugin', 'deactivate', 'translatepress-multilingual' );
+			wpStatus( 'plugin', 'uninstall', 'translatepress-multilingual', '--deactivate' );
+			wpStatus( 'plugin', 'delete', 'translatepress-multilingual' );
+			wpStatus( 'rewrite', 'flush', '--hard' );
+			wp( 'option', 'delete', 'axle_smoke_test_urls' );
+			wp( 'option', 'delete', 'axle_smoke_test_rules' );
+		}
+	} );
+
 	test( 'Get started: shown on a first visit, hidden for this user once dismissed', async ( { page } ) => {
 		resetRuns();
 		await page.goto( SCREEN );

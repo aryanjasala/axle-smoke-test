@@ -50,6 +50,10 @@ When you have wp-admin open, the same pages load in a hidden frame. It records J
 
 With WPML, Polylang or TranslatePress the home page of each language, and its shop pages, are offered as suggested pages with one click, never added by themselves. Pages are only loaded: nothing is submitted, added to a cart or ordered.
 
+**Checks as a role:**
+
+Some pages break for an editor or a customer and not for you. Switch on Check as a role, pick a role and the dashboard, profile and WooCommerce account pages are opened as a test user with that role. The user is made by the plugin, has no password and cannot sign in. It gets the same one-page, 60 second login as the wp-admin checks, and it is removed when you switch the feature off or uninstall the plugin. Pages are only viewed.
+
 **Rollback:**
 
 Before each plugin or theme update, the current files are zipped (up to 100 MB each, 500 MB in all, the last 2 per item, for 14 days). A red run offers "Roll back Smoke Fixture to 1.1": it puts the old files back, clears OPcache and runs the check again. Auto rollback is there too, off by default. Database changes the new version made are not undone, and the run lists the version options that changed so you know. Core updates are never rolled back.
@@ -69,7 +73,7 @@ Free and open source under the GPL. No pro version, no upsells, no ads in wp-adm
 = WP-CLI =
 
 * `wp axle-smoke-test run [--urls=<keys>] [--reason=<text>] [--wait]` runs a check now and exits with 1 on red.
-* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `rules list|set|clear`, `findings accept|restore`, `suggestions list|add`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
+* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `rules list|set|clear`, `findings accept|restore`, `suggestions list|add`, `role-checks status|on|off`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
 
 = For developers =
 
@@ -112,6 +116,10 @@ Database changes. If the new version changed its tables or settings, the old ver
 = Will the hidden browser check click or buy anything? =
 
 No. It only loads pages and reads them. It never submits forms or completes a checkout.
+
+= Does checking as a role create a user? =
+
+Yes, one test user for the role you pick, flagged as the plugin's. It has a random password nobody sees and cannot sign in, reset a password or get an application password. It is deleted when you switch the feature off, pick another role or uninstall the plugin. If a user with that name already exists and is not the plugin's, it is left alone.
 
 = Does it work on multisite? =
 

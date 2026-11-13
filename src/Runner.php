@@ -94,6 +94,15 @@ class Runner implements Service {
 	}
 
 	/**
+	 * The settings.
+	 *
+	 * @return Settings
+	 */
+	public function settings(): Settings {
+		return $this->settings;
+	}
+
+	/**
 	 * Storage, for the screens and commands.
 	 *
 	 * @return Runs
@@ -309,6 +318,11 @@ class Runner implements Service {
 			$this->store( $run, $result, $thresholds );
 		}
 		AdminSession::sweep( $user_id );
+		if ( $this->settings->get( 'role_checks' ) ) {
+			foreach ( RoleUser::ids() as $test_user ) {
+				AdminSession::sweep( $test_user );
+			}
+		}
 
 		$context                 = $run['context'];
 		$context['checked']      = wp_list_pluck( $urls, 'key' );

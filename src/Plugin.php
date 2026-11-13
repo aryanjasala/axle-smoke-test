@@ -136,6 +136,7 @@ final class Plugin {
 			new Family(),
 			$this->cleanup,
 			new AdminSession(),
+			new RoleUser(),
 			new Injector(),
 			new Controller( $this->runner, $this->rollback ),
 			new Page( $this->settings, $this->runner, $this->rollback ),

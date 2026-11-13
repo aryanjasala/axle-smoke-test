@@ -156,7 +156,7 @@ final class ServicesTest extends SmokeTestCase {
 		$abilities->register_abilities();
 
 		$this->assertSame(
-			array( 'run-smoke-test', 'list-runs', 'get-run', 'list-urls', 'accept-baseline', 'rollback-update', 'set-url-rules', 'accept-finding', 'list-suggestions', 'add-suggestions' ),
+			array( 'run-smoke-test', 'list-runs', 'get-run', 'list-urls', 'accept-baseline', 'rollback-update', 'set-url-rules', 'accept-finding', 'list-suggestions', 'add-suggestions', 'get-role-checks', 'set-role-checks' ),
 			array_map(
 				static function ( $name ) {
 					return substr( $name, strlen( 'axle-smoke-test/' ) );

@@ -12,5 +12,5 @@ module.exports = {
 	// This plugin's own Docker site by default. A shared site can be used by pointing WP_COMPOSE_DIR at its compose folder.
 	COMPOSE_DIR: process.env.WP_COMPOSE_DIR || path.join( __dirname, '..', 'env' ),
 	// Options the plugin stores, cleared before each run.
-	OPTIONS: ['axle_smoke_test_settings', 'axle_smoke_test_urls', 'axle_smoke_test_fingerprint', 'axle_smoke_test_backups', 'axle_smoke_test_alert_log', 'axle_smoke_test_notice'],
+	OPTIONS: ['axle_smoke_test_settings', 'axle_smoke_test_urls', 'axle_smoke_test_fingerprint', 'axle_smoke_test_backups', 'axle_smoke_test_alert_log', 'axle_smoke_test_notice', 'axle_smoke_test_rules', 'axle_smoke_test_accepted'],
 };
