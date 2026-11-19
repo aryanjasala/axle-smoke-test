@@ -212,4 +212,30 @@ final class CheckerTest extends SmokeTestCase {
 		$this->assertInstanceOf( \WP_Error::class, $error );
 		$this->assertSame( 'axle_smoke_test_basic_auth', $error->get_error_code() );
 	}
+
+	public function test_the_loopback_check_carries_the_gate_pass_and_names_the_likely_cause(): void {
+		$this->response = $this->reply( 401, '' );
+		$error          = $this->checker()->loopback_works();
+
+		$this->assertMatchesRegularExpression( '/^\d+\.[a-f0-9]{64}$/', $this->requests[0]['args']['headers']['X-Axle-Loopback'] );
+		$this->assertStringContainsString( 'password screen', $error->get_error_message() );
+	}
+
+	public function test_a_page_check_carries_the_gate_pass_only_to_this_site(): void {
+		$this->checker()->check(
+			array(
+				'key'      => 'home',
+				'label'    => 'Home',
+				'url'      => 'https://example.com/',
+				'expected' => array( 200 ),
+				'browser'  => false,
+				'auth'     => false,
+				'kind'     => 'html',
+				'rules'    => array(),
+			),
+			0
+		);
+		$this->assertArrayHasKey( 'X-Axle-Loopback', $this->requests[0]['args']['headers'] );
+		$this->assertSame( array(), Checker::gate_headers( 'https://elsewhere.test/' ) );
+	}
 }

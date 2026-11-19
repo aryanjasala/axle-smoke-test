@@ -47,7 +47,7 @@ function resetRuns() {
 	showSteps();
 	sql( 'TRUNCATE TABLE wp_axle_smoke_runs' );
 	sql( 'TRUNCATE TABLE wp_axle_smoke_results' );
-	for ( const name of [ 'axle_smoke_test_alert_log', 'axle_smoke_test_notice', 'axle_smoke_test_settings', 'axle_smoke_test_urls', 'axle_smoke_test_rules', 'axle_smoke_test_accepted', 'ast_fixture_mail', 'ast_fixture_form', 'ast_fixture_languages' ] ) {
+	for ( const name of [ 'axle_smoke_test_alert_log', 'axle_smoke_test_notice', 'axle_smoke_test_settings', 'axle_smoke_test_urls', 'axle_smoke_test_rules', 'axle_smoke_test_accepted', 'ast_fixture_mail', 'ast_fixture_form', 'ast_fixture_languages', 'axle_smoke_test_coverage', 'ast_fixture_widget_break' ] ) {
 		try {
 			wp( 'option', 'delete', name );
 		} catch ( error ) {
@@ -102,6 +102,31 @@ function seedScreens() {
 	return seedRuns();
 }
 
+/** Posts that use a gallery block, a table block, a shortcode and a page template, then a finished coverage scan. */
+function seedCoverage() {
+	createContent();
+	for ( const name of [ 'axle_smoke_test_coverage', 'ast_fixture_widget_break' ] ) {
+		try {
+			wp( 'option', 'delete', name );
+		} catch ( error ) {
+			// Not set.
+		}
+	}
+	const have = wp( 'post', 'list', '--post_type=post', '--s=Coverage sample', '--format=count' );
+	if ( have === '0' ) {
+		wp( 'post', 'create', '--post_title=Coverage sample gallery', '--post_status=publish', '--post_content=<!-- wp:gallery --><figure class="wp-block-gallery"></figure><!-- /wp:gallery -->' );
+		wp( 'post', 'create', '--post_title=Coverage sample table', '--post_status=publish', '--post_content=<!-- wp:table --><figure class="wp-block-table"><table><tbody><tr><td>One</td></tr></tbody></table></figure><!-- /wp:table -->[ast_widget]' );
+		// The newest post is a key URL already, so keep it plain: the others must come from the coverage set.
+		wp( 'post', 'create', '--post_title=Coverage sample latest', '--post_status=publish', '--post_content=<!-- wp:paragraph --><p>Nothing special.</p><!-- /wp:paragraph -->' );
+	}
+	scanCoverage();
+}
+
+/** Runs the coverage scan to its end, as WP-Cron would in batches. */
+function scanCoverage() {
+	wpEval( 'update_option( "axle_smoke_test_settings", array_merge( (array) get_option( "axle_smoke_test_settings", array() ), array( "coverage" => true ) ) ); AryanX\\Axle\\SmokeTest\\Plugin::instance()->settings()->flush(); $c = AryanX\\Axle\\SmokeTest\\Plugin::instance()->runner()->coverage(); $c->start(); for ( $i = 0; $i < 50 && AryanX\\Axle\\SmokeTest\\Coverage::state()["scan"]; $i++ ) { $c->scan_batch(); }' );
+}
+
 /** A finished server tier that waits for a browser, as cron leaves it. Returns its ID. */
 function waitingRun() {
 	settleRuns();
@@ -114,6 +139,6 @@ function showNotice( id ) {
 }
 
 module.exports = {
-	seedScreens,
+	seedScreens, seedCoverage, scanCoverage,
 	waitingRun,
 	showNotice, showSteps, sql, installFixture, setFixture, offer, createContent, resetRuns, settleRuns, getRun, setSettings, seedRuns, mails };

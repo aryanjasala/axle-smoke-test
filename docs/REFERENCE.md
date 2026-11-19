@@ -52,6 +52,15 @@ The test user belongs to the plugin and is never a real person's account. It has
 
 A role that WooCommerce or another plugin keeps out of wp-admin turns the dashboard red with its redirect: that is what a customer would see. Untick the page if it is meant.
 
+### Coverage
+
+Key URLs miss the page that breaks. A gallery plugin update can break only the posts that have a gallery, and none of your key URLs has one. So after the key URLs, a run also opens the newest published page for every block type, shortcode and template the site uses, and blames what it finds the same way.
+
+- **How the set is built.** A background scan reads published content in WP-Cron batches (100 posts, five seconds apart). It looks for block comments (`<!-- wp:gallery -->`), registered shortcode tags and the page template (a post type without one counts as its `single-<type>` template). For each, the newest published item wins. The set is found again when a picked post changes, is trashed or deleted, and once a day. The old set stays in use until a new scan finishes. A newly published post is added at once when it uses something newer.
+- **What a run does.** Pages are checked in the order of how much they cover, up to 60, inside a 90-second budget that starts after the key URLs. Pages left over are skipped, and the run says how many. A run of chosen URLs (`--urls`) skips coverage. Coverage pages are checked on the server only, with the same baseline, verdict and blame as key URLs, under the key `cov-<post ID>`. Password-protected posts are never picked.
+- **The card.** The Runs screen says "Checks 38 pages covering 61 block types, 7 shortcodes, 9 templates", when it last scanned, and has a button to scan again. The same line is on each run.
+- **Switch it off** under Settings > Checks > Coverage check.
+
 ### Verdicts
 
 | Verdict | When |
@@ -74,9 +83,21 @@ location ^~ /wp-content/axle-smoke-test/ { deny all; }
 
 A red or amber run with a backup of the version before its update offers "Roll back <item> to <version>". It unzips the backup to a temp folder in `wp-content/upgrade`, swaps the folders (the current one comes back if anything fails), clears OPcache for those files in the web server's PHP too (through a one-time loopback, since WP-CLI and cron have their own OPcache), and runs the check again as a `rollback` run.
 
-A rollback puts files back, not the database. The run lists the options ending in `_version` or `_db_version` that changed during the update. Core is never rolled back. While Axle Read-Only Mode has the site frozen, rollbacks are refused.
+A rollback puts files back, not the database. The run lists the options ending in `_version` or `_db_version` that changed during the update. Core is never rolled back. While Axle Read-Only Mode has the site's code frozen, rollbacks are refused. A "Content only" freeze leaves plugins and updates open, so rollbacks go on. The `axle_smoke_test_rollback_in_freeze` filter lets a freeze that waits for a green run allow them.
 
 **Auto rollback** (off by default) rolls back after a red run when the errors are blamed on the updated item, or only one item was updated. It never rolls back the run after a rollback.
+
+### Accepting a baseline
+
+"Accept" makes a page as it is in a run the baseline that later runs compare with. A page that failed on status, a fatal error, the critical error screen or no answer is never accepted: it shows "Failed, so it cannot be the baseline", and accepting a whole run leaves it out. Accepting can be undone right after, from the notice, and the old baseline and the findings accepted against it are back in force.
+
+### Findings
+
+A run groups the same finding across pages: "1 fatal error on 6 pages", with the pages folded under it. The results table then says "Same as the finding above" instead of repeating the message.
+
+### On a gated copy
+
+Loopback requests carry the signed Axle loopback header, so a site behind Staging Guard's password gate is still checked. If a check still gets HTTP 401, the run says the likely cause is a password screen, such as Staging Guard's gate or server Basic auth.
 
 ### Alerts
 
@@ -90,6 +111,16 @@ When a run is red (or amber, if you ask): an email (the addresses in the setting
 | --- | --- | --- |
 | `axle_smoke_test_capability` | `$capability` | `update_plugins`. Needed for the screen, the REST API, the abilities and the panel. A rollback also needs `update_plugins` for a plugin or `update_themes` for a theme |
 | `axle_smoke_test_rollback_capability` | `$capability, $candidate` | `update_plugins` or `update_themes` |
+| `axle_smoke_test_rollback_in_freeze` | `$allowed, $state` | `false`. Return true to allow a rollback while Read-Only Mode freezes code |
+| `axle_smoke_test_unacceptable_codes` | `$codes, $result` | `fatal`, `status`, `critical_error`, `no_response`: finding codes that keep a page from becoming the baseline |
+| `axle_smoke_test_coverage_post_types` | `$types` | Every public post type except attachments |
+| `axle_smoke_test_coverage_batch` | `$size` | 100 posts per scan batch, 10 to 1000 |
+| `axle_smoke_test_coverage_max_pages` | `$max` | 60 pages per run, 1 to 500 |
+| `axle_smoke_test_coverage_budget` | `$seconds` | 90 seconds for coverage pages after the key URLs, 5 to 900 |
+| `axle_smoke_test_coverage_excluded` | `$keys` | None. Keys the set never covers: `block:core/gallery`, `shortcode:gallery`, `template:single-post` |
+| `axle_smoke_test_coverage_excluded_posts` | `$ids` | None. Posts the set never picks |
+| `axle_smoke_test_coverage_entries` | `$entries` | The coverage pages a run checks |
+| `axle_smoke_test_coverage_in_run` | `$wanted, $run` | True for a full run, false for a run of chosen URLs |
 | `axle_smoke_test_auto_urls` | `$urls` | The URLs picked from the site |
 | `axle_smoke_test_urls` | `$urls` | The final list: picked plus your own |
 | `axle_smoke_test_max_urls` | `$max` | 25 (1 to 200) |
@@ -151,7 +182,11 @@ add_filter( 'axle_smoke_test_ignored_php_errors', function ( $patterns ) {
 | `axle_smoke_test_run_queued` | `$run` | A run was queued, or a change joined a queued run |
 | `axle_smoke_test_run_started` | `$run` | The server tier starts |
 | `axle_smoke_test_url_checked` | `$result, $run` | One URL in one tier has a verdict |
-| `axle_smoke_test_run_finished` | `$run, $results` | After the server tier, and again when the browser or a worker adds results |
+| `axle_smoke_test_run_finished` | `$run, $results` | After the server tier, and again when the browser or a worker adds results. `$run` has `id`, `verdict` (`green`, `amber`, `red`), `source` (what started it: `update`, `deploy`, `manual`, or the slug given to `axle_smoke_test_run_now`), `finished` (Unix time), `final` (true once the status is `done`; wait for it before acting on a verdict), `status` and `summary` |
+| `axle_smoke_test_run_now` | `$source` | Listened to, not fired: do this action to queue a full run now. `$source` comes back as `source` on `axle_smoke_test_run_finished` |
+| `axle_smoke_test_baseline_restored` | `$changes` | An accepted baseline was taken back |
+| `axle_smoke_test_coverage_scan_started` | none | A coverage scan started |
+| `axle_smoke_test_coverage_scanned` | `$summary` | A coverage scan finished: `pages`, `blocks`, `shortcodes`, `templates`, `posts` |
 | `axle_smoke_test_run_failed` | `$run, $error` | The site could not load itself |
 | `axle_smoke_test_baseline_accepted` | `$run, $results, $url_key` | Results became the baseline |
 | `axle_smoke_test_alert_sent` | `$channel, $run, $recipients, $ok` | `notice`, `email` or `webhook` |
@@ -208,6 +243,8 @@ wp.hooks.addFilter( 'axleSmokeTest.ignoredJsErrors', 'my-site', ( patterns ) => 
 | `axle-smoke-test/accept-finding` | idempotent | Accepts one finding of a URL (or takes it back with `accept: false`) |
 | `axle-smoke-test/list-suggestions` | readonly | Shop and language pages not on the list yet |
 | `axle-smoke-test/add-suggestions` | write | Adds suggested pages with their rules |
+| `axle-smoke-test/get-coverage` | readonly | Pages, block types, shortcodes and templates the coverage check covers, and when it last scanned |
+| `axle-smoke-test/rescan-coverage` | idempotent | Starts a background scan of the content. Changes nothing on the site |
 | `axle-smoke-test/get-role-checks` | readonly | Whether pages are checked as a role, which role and pages |
 | `axle-smoke-test/set-role-checks` | idempotent | Switches checks as a role on or off. Also needs the permission to create users and to give the role |
 | `axle-smoke-test/rollback-update` | destructive | Rolls back an item of a run. Refused without a backup, for core, and during a Read-Only Mode freeze |
@@ -256,6 +293,7 @@ SITE=https://example.com WP_USER=admin WP_APP_PASSWORD="abcd efgh ijkl mnop qrst
 | `wp axle-smoke-test rules list\|set <key> [--must=<a\|b>] [--must-not=<a\|b>]\|clear <key>` | Rules of a URL, separated by a pipe |
 | `wp axle-smoke-test findings accept\|restore <run-id> <url-key> <sig>` | Accepts a finding, or takes it back |
 | `wp axle-smoke-test suggestions list\|add [<keys>]` | Suggested pages |
+| `wp axle-smoke-test coverage [status\|rescan] [--format=<f>]` | What the coverage check covers, or a new scan |
 | `wp axle-smoke-test role-checks status\|on [--role=<role>] [--pages=<a,b>]\|off` | Checks pages as a test user with a role |
 | `wp axle-smoke-test baseline accept <run-id> [--url=<key>]` | Accepts a baseline |
 | `wp axle-smoke-test rollback <run-id> [--item=<plugin\|theme>] [--yes]` | Rolls back and runs again |

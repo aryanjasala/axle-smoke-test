@@ -125,6 +125,82 @@ final class Verdict {
 	}
 
 	/**
+	 * Findings grouped by what went wrong, over every result of a run, so one
+	 * fatal error on six pages is one finding with six pages under it.
+	 *
+	 * @param array[] $results Results with meta.reasons.
+	 * @return array[] Each: level, code, message, source, pages (list of url_key, label, url, id). Worst first, then by pages.
+	 */
+	public static function group_findings( array $results ): array {
+		$groups = array();
+		foreach ( $results as $result ) {
+			foreach ( (array) ( $result['meta']['reasons'] ?? array() ) as $reason ) {
+				$level = (string) ( $reason['level'] ?? '' );
+				if ( ! in_array( $level, array( self::RED, self::AMBER ), true ) ) {
+					continue;
+				}
+				$id = (string) ( $reason['code'] ?? '' ) . '|' . (string) ( $reason['message'] ?? '' );
+				if ( ! isset( $groups[ $id ] ) ) {
+					$groups[ $id ] = array(
+						'level'   => $level,
+						'code'    => (string) ( $reason['code'] ?? '' ),
+						'message' => (string) ( $reason['message'] ?? '' ),
+						'source'  => (string) ( $reason['source'] ?? '' ),
+						'pages'   => array(),
+					);
+				}
+				$key = (string) ( $result['url_key'] ?? '' );
+				if ( ! isset( $groups[ $id ]['pages'][ $key ] ) ) {
+					$groups[ $id ]['pages'][ $key ] = array(
+						'url_key' => $key,
+						'label'   => (string) ( $result['meta']['label'] ?? $key ),
+						'url'     => (string) ( $result['url'] ?? '' ),
+						'id'      => (int) ( $result['id'] ?? 0 ),
+					);
+				}
+				$groups[ $id ]['level'] = self::worst( $groups[ $id ]['level'], $level );
+			}
+		}
+		foreach ( $groups as &$group ) {
+			$group['pages'] = array_values( $group['pages'] );
+		}
+		unset( $group );
+		$groups = array_values( $groups );
+		usort(
+			$groups,
+			static function ( $a, $b ) {
+				return array( self::ORDER[ $b['level'] ] ?? 0, count( $b['pages'] ) ) <=> array( self::ORDER[ $a['level'] ] ?? 0, count( $a['pages'] ) );
+			}
+		);
+
+		return $groups;
+	}
+
+	/**
+	 * Whether a result failed so badly that it must never become the baseline:
+	 * a wrong HTTP status, a fatal error, the critical-error screen or no answer.
+	 *
+	 * @param array $result A result with meta.reasons.
+	 * @return bool
+	 */
+	public static function blocks_baseline( array $result ): bool {
+		/**
+		 * Filters the finding codes that keep a page from being accepted as the baseline.
+		 *
+		 * @param string[] $codes Default fatal, status, critical_error, no_response.
+		 * @param array    $result The result.
+		 */
+		$codes = array_map( 'strval', (array) apply_filters( 'axle_smoke_test_unacceptable_codes', array( 'fatal', 'status', 'critical_error', 'no_response' ), $result ) );
+		foreach ( (array) ( $result['meta']['reasons'] ?? array() ) as $reason ) {
+			if ( in_array( (string) ( $reason['code'] ?? '' ), $codes, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Server tier checks.
 	 *
 	 * @param array      $result     Result.
@@ -170,7 +246,7 @@ final class Verdict {
 					self::RED,
 					'status',
 					/* translators: 1: HTTP status received, 2: expected statuses. */
-					sprintf( __( 'HTTP %1$d, expected %2$s.', 'axle-smoke-test' ), $status, $wanted )
+					sprintf( __( 'HTTP %1$d, expected %2$s.', 'axle-smoke-test' ), $status, $wanted ) . ( 401 === $status ? ' ' . Family::unauthorized_hint() : '' )
 				);
 			} else {
 				$reasons[] = self::reason(

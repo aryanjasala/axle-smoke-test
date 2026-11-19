@@ -156,7 +156,7 @@ final class ServicesTest extends SmokeTestCase {
 		$abilities->register_abilities();
 
 		$this->assertSame(
-			array( 'run-smoke-test', 'list-runs', 'get-run', 'list-urls', 'accept-baseline', 'rollback-update', 'set-url-rules', 'accept-finding', 'list-suggestions', 'add-suggestions', 'get-role-checks', 'set-role-checks' ),
+			array( 'run-smoke-test', 'list-runs', 'get-run', 'list-urls', 'accept-baseline', 'rollback-update', 'set-url-rules', 'accept-finding', 'list-suggestions', 'add-suggestions', 'get-coverage', 'rescan-coverage', 'get-role-checks', 'set-role-checks' ),
 			array_map(
 				static function ( $name ) {
 					return substr( $name, strlen( 'axle-smoke-test/' ) );
@@ -169,6 +169,8 @@ final class ServicesTest extends SmokeTestCase {
 		$this->assertTrue( $registered['axle-smoke-test/accept-baseline']['meta']['annotations']['idempotent'] );
 		$this->assertTrue( $registered['axle-smoke-test/set-url-rules']['meta']['annotations']['idempotent'] );
 		$this->assertTrue( $registered['axle-smoke-test/list-suggestions']['meta']['annotations']['readonly'] );
+		$this->assertTrue( $registered['axle-smoke-test/get-coverage']['meta']['annotations']['readonly'] );
+		$this->assertFalse( $registered['axle-smoke-test/rescan-coverage']['meta']['annotations']['readonly'] );
 		$this->assertFalse( $registered['axle-smoke-test/add-suggestions']['meta']['annotations']['destructive'] );
 		$this->assertFalse( $registered['axle-smoke-test/run-smoke-test']['meta']['annotations']['readonly'] );
 		$this->assertTrue( $registered['axle-smoke-test/run-smoke-test']['meta']['mcp']['public'] );

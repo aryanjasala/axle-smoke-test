@@ -395,6 +395,35 @@ final class Abilities implements Service {
 		);
 
 		$this->ability(
+			'get-coverage',
+			__( 'Get what the coverage check covers', 'axle-smoke-test' ),
+			__( 'How many pages the coverage check opens after the key URLs, and how many block types, shortcodes and templates they cover. Nothing changes.', 'axle-smoke-test' ),
+			array(),
+			array( 'type' => 'object' ),
+			array( $this, 'get_coverage' ),
+			$can,
+			array(
+				'readonly'   => true,
+				'idempotent' => true,
+			)
+		);
+
+		$this->ability(
+			'rescan-coverage',
+			__( 'Scan the content for the coverage check again', 'axle-smoke-test' ),
+			__( 'Starts a background scan of published content that finds the newest page for every block type, shortcode and template. The current set stays in use until it finishes. Nothing on the site is changed.', 'axle-smoke-test' ),
+			array(),
+			array( 'type' => 'object' ),
+			array( $this, 'rescan_coverage' ),
+			$can,
+			array(
+				'readonly'    => false,
+				'destructive' => false,
+				'idempotent'  => true,
+			)
+		);
+
+		$this->ability(
 			'get-role-checks',
 			__( 'Get the checks as a role', 'axle-smoke-test' ),
 			__( 'Whether pages are checked as a test user with a role, which role and which pages. Nothing changes.', 'axle-smoke-test' ),
@@ -441,6 +470,34 @@ final class Abilities implements Service {
 				'idempotent'  => true,
 			)
 		);
+	}
+
+	/**
+	 * Reads the coverage set.
+	 *
+	 * @return array pages, blocks, shortcodes, templates, scanned, scanning, enabled.
+	 */
+	public function get_coverage(): array {
+		$coverage = $this->runner->coverage();
+
+		return $coverage ? $coverage->summary() + array( 'enabled' => $coverage->enabled() ) : array( 'enabled' => false );
+	}
+
+	/**
+	 * Starts a new scan.
+	 *
+	 * @return array|\WP_Error The coverage set, with scanning true.
+	 */
+	public function rescan_coverage() {
+		$coverage = $this->runner->coverage();
+		if ( ! $coverage || ! $coverage->enabled() ) {
+			return new \WP_Error( 'axle_smoke_test_coverage_off', __( 'The coverage check is switched off in the settings.', 'axle-smoke-test' ), array( 'status' => 409 ) );
+		}
+		if ( ! Coverage::state()['scan'] ) {
+			$coverage->start();
+		}
+
+		return $this->get_coverage();
 	}
 
 	/**

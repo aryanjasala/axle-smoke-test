@@ -38,6 +38,7 @@ An update or a deploy breaks checkout, wp-admin or a page template, and the firs
 - **Browser checks** in a hidden frame of an admin's browser: JavaScript errors, failed files and images, and where the landmarks sit. Cron runs wait for the next admin page view
 - **Red, amber, green** against a baseline, with every error blamed on the plugin or theme it came from. Accept a run as the new baseline after a redesign
 - **Pages that are fine but empty**: each key URL learns a structure fingerprint (header, menu, footer, forms and where they post, Add to cart buttons, search and login forms, bucketed counts of links, images and buttons, the size of the text). A part that disappears turns the page red in plain words ("The page no longer has a form. It had 1."), big drops are amber, and each finding can be accepted on its own
+- **Coverage**: after the key URLs, a run also opens the newest page for every block type, shortcode and template your site uses, found by a background scan, so a gallery update that breaks only posts with a gallery is caught. The same error on many pages is one finding with the pages folded under it
 - **Page rules**: "must contain" and "must not contain" per URL, as text or a simple CSS selector, edited next to the URL. The browser also checks that a required element is visible
 - **Shops and multilingual sites**: WooCommerce shop, an in-stock product, cart, checkout and account pages come with rules for what they must render. WPML, Polylang and TranslatePress sites are offered each language's home page (and shop pages) with one click, never added silently
 - **Checks as a role**: open the dashboard, profile and WooCommerce account pages as a test user with the role you choose (editor, customer, any but administrator), to catch a page that breaks for them and not for admins. The user is made by the plugin, has no password and cannot sign in, and goes away when you switch it off or uninstall. View only
@@ -81,8 +82,8 @@ wp axle-smoke-test rollback 12 --yes
 
 <table>
   <tr>
-    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-1.png" alt="A red run after an update: the fatal error, the plugin that caused it, and the one-click rollback"><br><sub>A red run after an update: the fatal error, the plugin that caused it, and the one-click rollback</sub></td>
-    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-2.png" alt="The latest run and every run before it"><br><sub>The latest run and every run before it</sub></td>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-1.png" alt="A red run after an update: the fatal error grouped across pages, the plugin that caused it, and the one-click rollback"><br><sub>A red run after an update: the fatal error grouped across pages, the plugin that caused it, and the one-click rollback</sub></td>
+    <td width="50%" valign="top"><img src=".wordpress-org/screenshot-2.png" alt="The latest run, what the coverage check covers, and every run before it"><br><sub>The latest run, what the coverage check covers, and every run before it</sub></td>
   </tr>
   <tr>
     <td width="50%" valign="top"><img src=".wordpress-org/screenshot-3.png" alt="Right after an update on the Plugins screen, the check runs and shows the verdict"><br><sub>Right after an update on the Plugins screen, the check runs and shows the verdict</sub></td>
@@ -125,6 +126,7 @@ src/
 ├── RoleUser.php         the test user for checks as a role
 ├── Verdict.php          red, amber, green
 ├── Attribution.php      which plugin or theme
+├── Coverage.php         one page per block, shortcode and template
 ├── Runner.php           queue, run, baseline
 ├── Runs.php             the two tables
 ├── Triggers.php         updates, installs, theme switches, deploys

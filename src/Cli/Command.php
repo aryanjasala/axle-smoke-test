@@ -497,6 +497,58 @@ final class Command {
 	}
 
 	/**
+	 * Shows what the coverage check covers, or scans the content again.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [<action>]
+	 * : status or rescan. Default status.
+	 *
+	 * [--format=<format>]
+	 * : For status: table, json or yaml. Default table.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp axle-smoke-test coverage
+	 *     wp axle-smoke-test coverage rescan
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Named arguments.
+	 */
+	public function coverage( $args, $assoc_args ): void {
+		$action   = (string) ( $args[0] ?? 'status' );
+		$coverage = $this->runner->coverage();
+		if ( ! $coverage ) {
+			\WP_CLI::error( 'The coverage check is not available.' );
+		}
+		if ( 'rescan' === $action ) {
+			if ( ! $coverage->enabled() ) {
+				\WP_CLI::error( 'The coverage check is switched off in the settings.' );
+			}
+			if ( ! \AryanX\Axle\SmokeTest\Coverage::state()['scan'] ) {
+				$coverage->start();
+			}
+			\WP_CLI::success( 'A scan was queued. It runs in WP-Cron batches.' );
+			return;
+		}
+		if ( 'status' !== $action ) {
+			\WP_CLI::error( 'Use status or rescan.' );
+		}
+
+		$summary = $coverage->summary();
+		$status  = array(
+			'enabled'    => $coverage->enabled() ? 'yes' : 'no',
+			'pages'      => $summary['pages'],
+			'blocks'     => $summary['blocks'],
+			'shortcodes' => $summary['shortcodes'],
+			'templates'  => $summary['templates'],
+			'scanned'    => $summary['scanned'] ? gmdate( 'Y-m-d H:i:s', $summary['scanned'] ) . ' UTC' : 'never',
+			'scanning'   => $summary['scanning'] ? 'yes' : 'no',
+		);
+		\WP_CLI\Utils\format_items( (string) ( $assoc_args['format'] ?? 'table' ), array( $status ), array_keys( $status ) );
+	}
+
+	/**
 	 * Accepts a run's results as the new baseline.
 	 *
 	 * ## OPTIONS

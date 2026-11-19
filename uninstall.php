@@ -41,14 +41,14 @@ function axle_smoke_test_uninstall_site(): void {
 	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}axle_smoke_runs" );
 	$wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}axle_smoke_results" );
 
-	foreach ( array( 'settings', 'urls', 'fingerprint', 'db_version', 'backups', 'alert_log', 'notice', 'rules', 'accepted' ) as $name ) {
+	foreach ( array( 'settings', 'urls', 'fingerprint', 'db_version', 'backups', 'alert_log', 'notice', 'rules', 'accepted', 'coverage' ) as $name ) {
 		delete_option( 'axle_smoke_test_' . $name );
 	}
 	delete_metadata( 'user', 0, 'axle_smoke_test_steps_dismissed', '', true );
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s", $wpdb->esc_like( '_transient_axle_smoke_test_' ) . '%', $wpdb->esc_like( '_transient_timeout_axle_smoke_test_' ) . '%' ) );
 	// phpcs:enable
 
-	foreach ( array( 'axle_smoke_test_run', 'axle_smoke_test_deploy_check', 'axle_smoke_test_cleanup', 'axle_smoke_test_daily' ) as $hook ) {
+	foreach ( array( 'axle_smoke_test_run', 'axle_smoke_test_deploy_check', 'axle_smoke_test_cleanup', 'axle_smoke_test_daily', 'axle_smoke_test_coverage_scan' ) as $hook ) {
 		wp_unschedule_hook( $hook );
 	}
 

@@ -104,6 +104,7 @@ final class Schema implements Service {
 			wp_clear_scheduled_hook( $hook );
 		}
 		wp_unschedule_hook( self::RUN_HOOK );
+		wp_unschedule_hook( Coverage::HOOK );
 		MuPlugin::remove();
 	}
 
