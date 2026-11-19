@@ -56,7 +56,7 @@ final class SettingsView {
 	 * @return array
 	 */
 	public static function from_form( array $posted ): array {
-		foreach ( array( 'browser_tier', 'email', 'notice', 'auto_rollback', 'cron_admin_checks', 'daily', 'role_checks' ) as $box ) {
+		foreach ( array( 'browser_tier', 'email', 'notice', 'auto_rollback', 'cron_admin_checks', 'daily', 'role_checks', 'coverage' ) as $box ) {
 			$posted[ $box ] = ! empty( $posted[ $box ] );
 		}
 		$auto_pick = array();
@@ -117,6 +117,7 @@ final class SettingsView {
 		echo '<h2 class="axle-card__title">' . esc_html__( 'Checks', 'axle-smoke-test' ) . '</h2>';
 		echo '<table class="form-table" role="presentation">';
 		$this->checkbox_row( 'browser_tier', __( 'Browser check', 'axle-smoke-test' ), __( 'Also load the pages in a hidden frame of an admin\'s browser, for JavaScript errors and layout changes.', 'axle-smoke-test' ), $s );
+		$this->checkbox_row( 'coverage', __( 'Coverage check', 'axle-smoke-test' ), __( 'After the key URLs, also open the newest page for every block type, shortcode and template the site uses.', 'axle-smoke-test' ), $s );
 		$this->number_row( 'text_threshold', __( 'Text change threshold', 'axle-smoke-test' ), __( 'Percent of the visible text that may change before a page turns amber.', 'axle-smoke-test' ), $s, 1, 100 );
 		$this->number_row( 'layout_threshold', __( 'Layout threshold', 'axle-smoke-test' ), __( 'Pixels a landmark may move or resize before a page turns amber.', 'axle-smoke-test' ), $s, 1, 2000 );
 		$this->number_row( 'blank_bytes', __( 'Blank page under', 'axle-smoke-test' ), __( 'Bytes of visible text under which a page counts as blank (red).', 'axle-smoke-test' ), $s, 0, 100000 );
@@ -272,7 +273,7 @@ final class SettingsView {
 					array( 'key' => $url['key'] ),
 					__( 'This page is no longer checked, and its rules are deleted. Its past results stay. You can undo it right after.', 'axle-smoke-test' ),
 					__( 'Remove this URL', 'axle-smoke-test' ),
-					'button-link button-link-delete',
+					'button button-small',
 					/* translators: %s: page label. */
 					sprintf( __( 'Remove %s', 'axle-smoke-test' ), $url['label'] )
 				);

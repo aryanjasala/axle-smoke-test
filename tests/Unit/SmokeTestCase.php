@@ -57,6 +57,8 @@ abstract class SmokeTestCase extends TestCase {
 				return 'https://example.com' . ( '' === $path ? '' : '/' . ltrim( $path, '/' ) );
 			}
 		);
+		Functions\when( 'site_url' )->justReturn( 'https://example.com' );
+		Functions\when( 'wp_salt' )->justReturn( 'test-salt' );
 		Functions\when( 'admin_url' )->alias(
 			static function ( $path = '' ) {
 				return 'https://example.com/wp-admin/' . ltrim( $path, '/' );

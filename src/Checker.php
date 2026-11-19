@@ -134,6 +134,8 @@ class Checker {
 			$args['headers']['Authorization'] = 'Basic ' . base64_encode( $auth_user . ':' . $this->settings->secret( 'auth_pass' ) );
 		}
 
+		$args['headers'] = array_merge( $args['headers'], self::gate_headers( $url['url'] ) );
+
 		/**
 		 * Filters the arguments of each loopback request.
 		 *
@@ -243,6 +245,17 @@ class Checker {
 	}
 
 	/**
+	 * The headers that let a loopback request through Staging Guard's gate.
+	 * Empty when the URL is not this site's.
+	 *
+	 * @param string $url The URL about to be fetched.
+	 * @return array<string,string>
+	 */
+	public static function gate_headers( string $url ): array {
+		return Admin\AxleUi::loopback_headers( $url );
+	}
+
+	/**
 	 * Loads the home page once to see whether loopback requests work at all.
 	 *
 	 * @return true|\WP_Error
@@ -258,6 +271,7 @@ class Checker {
 			// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- HTTP basic auth header.
 			$args['headers'] = array( 'Authorization' => 'Basic ' . base64_encode( $auth_user . ':' . $this->settings->secret( 'auth_pass' ) ) );
 		}
+		$args['headers'] = array_merge( isset( $args['headers'] ) ? (array) $args['headers'] : array(), self::gate_headers( home_url( '/' ) ) );
 		/** This filter is documented in src/Checker.php */
 		$filtered = apply_filters( 'axle_smoke_test_request_args', $args, array( 'key' => 'loopback' ) );
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- A loopback to this site.
@@ -266,7 +280,7 @@ class Checker {
 			return $response;
 		}
 		if ( 401 === (int) wp_remote_retrieve_response_code( $response ) ) {
-			return new \WP_Error( 'axle_smoke_test_basic_auth', __( 'The site asks for a username and password (HTTP 401). Add them under Settings > Basic auth.', 'axle-smoke-test' ) );
+			return new \WP_Error( 'axle_smoke_test_basic_auth', __( 'The site answered HTTP 401.', 'axle-smoke-test' ) . ' ' . Family::unauthorized_hint() );
 		}
 
 		return true;

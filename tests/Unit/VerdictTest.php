@@ -196,4 +196,47 @@ final class VerdictTest extends SmokeTestCase {
 			Verdict::thresholds( new Settings() )
 		);
 	}
+
+	public function test_the_same_fatal_on_six_pages_is_one_finding_with_six_pages(): void {
+		$results = array();
+		foreach ( range( 1, 6 ) as $n ) {
+			$results[] = array(
+				'id'      => $n,
+				'url_key' => 'page-' . $n,
+				'url'     => 'https://example.com/p' . $n . '/',
+				'meta'    => array(
+					'label'   => 'Page ' . $n,
+					'reasons' => array(
+						array( 'level' => 'red', 'code' => 'fatal', 'message' => 'Fatal error: Call to undefined function gallery()', 'source' => 'plugin:gallery' ),
+					),
+				),
+			);
+		}
+		$results[] = array(
+			'id'      => 7,
+			'url_key' => 'feed',
+			'url'     => 'https://example.com/feed/',
+			'meta'    => array( 'label' => 'Feed', 'reasons' => array( array( 'level' => 'amber', 'code' => 'php_error', 'message' => 'New PHP notice: x', 'source' => '' ) ) ),
+		);
+
+		$groups = Verdict::group_findings( $results );
+
+		$this->assertCount( 2, $groups );
+		$this->assertSame( 'fatal', $groups[0]['code'] );
+		$this->assertCount( 6, $groups[0]['pages'] );
+		$this->assertSame( 'amber', $groups[1]['level'] );
+	}
+
+	public function test_failed_status_and_fatal_results_block_the_baseline(): void {
+		$this->assertTrue( Verdict::blocks_baseline( array( 'meta' => array( 'reasons' => array( array( 'code' => 'fatal' ) ) ) ) ) );
+		$this->assertTrue( Verdict::blocks_baseline( array( 'meta' => array( 'reasons' => array( array( 'code' => 'status' ) ) ) ) ) );
+		$this->assertFalse( Verdict::blocks_baseline( array( 'meta' => array( 'reasons' => array( array( 'code' => 'php_error' ) ) ) ) ) );
+		$this->assertFalse( Verdict::blocks_baseline( array( 'meta' => array() ) ) );
+	}
+
+	public function test_a_401_names_the_likely_cause(): void {
+		$verdict = Verdict::evaluate( $this->server( array( 'http_status' => 401 ) ), null, self::T );
+
+		$this->assertStringContainsString( 'password screen', $verdict['reasons'][0]['message'] );
+	}
 }

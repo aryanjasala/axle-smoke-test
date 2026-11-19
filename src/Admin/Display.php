@@ -74,6 +74,32 @@ final class Display {
 	}
 
 	/**
+	 * What the coverage set covers, in one sentence.
+	 *
+	 * @param array $coverage pages, blocks, shortcodes, templates.
+	 * @return string
+	 */
+	public static function coverage( array $coverage ): string {
+		$pages = (int) ( $coverage['pages'] ?? 0 );
+		if ( $pages < 1 ) {
+			return __( 'No pages yet: the content has not been scanned.', 'axle-smoke-test' );
+		}
+
+		return sprintf(
+			/* translators: 1: number of pages, 2: number of block types, 3: number of shortcodes, 4: number of templates, each with its noun. */
+			__( 'Checks %1$s covering %2$s, %3$s, %4$s.', 'axle-smoke-test' ),
+			/* translators: %d: number of pages. */
+			sprintf( _n( '%d page', '%d pages', $pages, 'axle-smoke-test' ), $pages ),
+			/* translators: %d: number of block types. */
+			sprintf( _n( '%d block type', '%d block types', (int) $coverage['blocks'], 'axle-smoke-test' ), (int) $coverage['blocks'] ),
+			/* translators: %d: number of shortcodes. */
+			sprintf( _n( '%d shortcode', '%d shortcodes', (int) $coverage['shortcodes'], 'axle-smoke-test' ), (int) $coverage['shortcodes'] ),
+			/* translators: %d: number of templates. */
+			sprintf( _n( '%d template', '%d templates', (int) $coverage['templates'], 'axle-smoke-test' ), (int) $coverage['templates'] )
+		);
+	}
+
+	/**
 	 * A trigger in words.
 	 *
 	 * @param string $trigger Trigger.

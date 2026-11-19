@@ -57,6 +57,18 @@ add_action(
 	}
 );
 
+// A shortcode that breaks only the posts that use it while ast_fixture_widget_break is 1:
+// a failure no key URL would ever show.
+add_shortcode(
+	'ast_widget',
+	function () {
+		if ( is_singular() && '1' === (string) get_option( 'ast_fixture_widget_break' ) ) {
+			ast_fixture_widget_missing();
+		}
+		return '<p>A widget.</p>';
+	}
+);
+
 // A second language while ast_fixture_languages is set, as a language plugin would report it.
 add_filter(
 	'axle_smoke_test_languages',
@@ -246,7 +258,7 @@ function ast_fixture_seed() {
 				);
 			}
 		}
-		$runs->update( $id, array( 'context' => array( 'items' => $plan[1], 'checked' => $checked, 'duration_ms' => 1840, 'versions_before' => array( 'smoke_fixture_db_version' => '1.0' ) ), 'server_done' => 1, 'browser_done' => 'red' === $verdict ? 0 : 1, 'status' => 'done' ) );
+		$runs->update( $id, array( 'context' => array( 'items' => $plan[1], 'checked' => $checked, 'duration_ms' => 1840, 'versions_before' => array( 'smoke_fixture_db_version' => '1.0' ), 'coverage' => array( 'planned' => 38, 'checked' => 37, 'skipped' => 1, 'pages' => 38, 'blocks' => 61, 'shortcodes' => 7, 'templates' => 9 ) ), 'server_done' => 1, 'browser_done' => 'red' === $verdict ? 0 : 1, 'status' => 'done' ) );
 		$runner->evaluate( $id );
 		$out[ $verdict ] = $id;
 	}

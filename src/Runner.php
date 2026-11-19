@@ -61,11 +61,25 @@ class Runner implements Service {
 	private Attribution $attribution;
 
 	/**
+	 * The coverage set.
+	 *
+	 * @var Coverage|null
+	 */
+	private ?Coverage $coverage;
+
+	/**
 	 * Runs to start at the end of this request, when WP-Cron is off.
 	 *
 	 * @var int[]
 	 */
 	private array $at_shutdown = array();
+
+	/**
+	 * What the last baseline acceptance replaced.
+	 *
+	 * @var array[]
+	 */
+	private array $last_baseline_changes = array();
 
 	/**
 	 * Sets up the runner.
@@ -75,8 +89,10 @@ class Runner implements Service {
 	 * @param Urls        $urls        Key URLs.
 	 * @param Checker     $checker     The server tier.
 	 * @param Attribution $attribution Error attribution.
+	 * @param Coverage    $coverage    The coverage set, or null to check key URLs only.
 	 */
-	public function __construct( Settings $settings, Runs $runs, Urls $urls, Checker $checker, Attribution $attribution ) {
+	public function __construct( Settings $settings, Runs $runs, Urls $urls, Checker $checker, Attribution $attribution, ?Coverage $coverage = null ) {
+		$this->coverage    = $coverage;
 		$this->settings    = $settings;
 		$this->runs        = $runs;
 		$this->urls        = $urls;
@@ -91,6 +107,25 @@ class Runner implements Service {
 		add_action( Schema::RUN_HOOK, array( $this, 'scheduled' ) );
 		add_action( Schema::DAILY_HOOK, array( $this, 'daily' ) );
 		add_action( 'init', array( $this, 'schedule_daily' ) );
+		add_action( 'axle_smoke_test_run_now', array( $this, 'run_now' ) );
+	}
+
+	/**
+	 * Queues a full run for another plugin that asked for one.
+	 *
+	 * @param string $source Who asks, for example axle-read-only-mode. It comes back as the run's source.
+	 */
+	public function run_now( $source = '' ): void {
+		$source = sanitize_key( (string) $source );
+		$source = '' === $source ? 'external' : $source;
+
+		$this->queue(
+			'manual',
+			array(
+				'reason' => $source,
+				'source' => $source,
+			)
+		);
 	}
 
 	/**
@@ -109,6 +144,15 @@ class Runner implements Service {
 	 */
 	public function runs(): Runs {
 		return $this->runs;
+	}
+
+	/**
+	 * The coverage set, for the screens and commands.
+	 *
+	 * @return Coverage|null
+	 */
+	public function coverage(): ?Coverage {
+		return $this->coverage;
 	}
 
 	/**
@@ -317,6 +361,7 @@ class Runner implements Service {
 			$result = $this->checker->check( $url, $user_id );
 			$this->store( $run, $result, $thresholds );
 		}
+		$coverage = $this->check_coverage( $run, $user_id, $urls, $thresholds );
 		AdminSession::sweep( $user_id );
 		if ( $this->settings->get( 'role_checks' ) ) {
 			foreach ( RoleUser::ids() as $test_user ) {
@@ -338,6 +383,9 @@ class Runner implements Service {
 			) 
 		);
 		$context['duration_ms']  = (int) round( ( microtime( true ) - $started ) * 1000 );
+		if ( $coverage ) {
+			$context['coverage'] = $coverage;
+		}
 
 		$wants_browser = $this->settings->get( 'browser_tier' ) && $context['browser_urls'] && false !== ( $context['browser'] ?? true );
 		$this->runs->update(
@@ -350,6 +398,38 @@ class Runner implements Service {
 		);
 
 		return $this->evaluate( $id );
+	}
+
+	/**
+	 * Checks the coverage set after the key URLs, inside the time budget.
+	 *
+	 * @param array   $run        The run.
+	 * @param int     $user_id    User for wp-admin URLs.
+	 * @param array[] $urls       The key URLs just checked.
+	 * @param array   $thresholds Verdict thresholds.
+	 * @return array planned, checked, skipped and the totals, or empty when coverage is off for this run.
+	 */
+	private function check_coverage( array $run, int $user_id, array $urls, array $thresholds ): array {
+		if ( ! $this->coverage || ! $this->coverage->wanted( $run ) ) {
+			return array();
+		}
+
+		$entries  = $this->coverage->entries( wp_list_pluck( $urls, 'url' ) );
+		$deadline = microtime( true ) + Coverage::budget();
+		$checked  = 0;
+		foreach ( $entries as $entry ) {
+			if ( microtime( true ) > $deadline ) {
+				break;
+			}
+			$this->store( $run, $this->checker->check( $entry, $user_id ), $thresholds );
+			++$checked;
+		}
+
+		return array(
+			'planned' => count( $entries ),
+			'checked' => $checked,
+			'skipped' => count( $entries ) - $checked,
+		) + $this->coverage->summary();
 	}
 
 	/**
@@ -700,12 +780,18 @@ class Runner implements Service {
 		$this->runs->update( $run_id, $fields );
 		$run = $this->runs->get( $run_id ) ?? $run;
 
+		// The shared shape other Axle plugins code against: id, verdict, source, finished.
+		$run['source']   = '' !== (string) ( $run['context']['source'] ?? '' ) ? (string) $run['context']['source'] : (string) $run['trigger_type'];
+		$run['finished'] = ! empty( $run['finished_gmt'] ) ? (int) strtotime( $run['finished_gmt'] . ' UTC' ) : time();
+		$run['final']    = 'done' === $run['status'];
+
 		/**
 		 * Fires when a run has a verdict: after its server tier, and again
 		 * when the browser or a worker adds results. $run['status'] is
-		 * waiting_browser or done.
+		 * waiting_browser or done, and $run['final'] is true only for done.
+		 * Wait for final before you act on a verdict.
 		 *
-		 * @param array   $run     The run, with verdict and summary.
+		 * @param array   $run     The run, with id, verdict (green, amber, red), source (what started it: update, deploy, manual, or the slug that fired axle_smoke_test_run_now), finished (Unix time), final (bool), status and summary.
 		 * @param array[] $results Its results.
 		 */
 		do_action( 'axle_smoke_test_run_finished', $run, $results );
@@ -727,16 +813,26 @@ class Runner implements Service {
 		}
 
 		$accepted = array();
+		$changes  = array();
 		foreach ( $this->runs->results( $run_id ) as $result ) {
-			if ( '' !== $url_key && $result['url_key'] !== $url_key ) {
+			if ( ( '' !== $url_key && $result['url_key'] !== $url_key ) || Verdict::blocks_baseline( $result ) ) {
 				continue;
 			}
+			$old       = $this->runs->baseline( (string) $result['url_key'], (string) $result['tier'] );
+			$changes[] = array(
+				'new'      => (int) $result['id'],
+				'old'      => $old ? (int) $old['id'] : 0,
+				'url_key'  => (string) $result['url_key'],
+				'tier'     => (string) $result['tier'],
+				'accepted' => Rules::accepted( (string) $result['url_key'] ),
+			);
 			$this->runs->set_baseline( $result );
 			Rules::clear_accepted( (string) $result['url_key'] );
 			$accepted[] = $result;
 		}
+		$this->last_baseline_changes = $changes;
 		if ( ! $accepted ) {
-			return new \WP_Error( 'axle_smoke_test_no_results', __( 'This run has no results for that URL.', 'axle-smoke-test' ), array( 'status' => 404 ) );
+			return new \WP_Error( 'axle_smoke_test_no_results', __( 'Nothing to accept: this run has no results for that URL, or they failed on status or a fatal error, which never become the baseline.', 'axle-smoke-test' ), array( 'status' => 404 ) );
 		}
 
 		/**
@@ -749,6 +845,45 @@ class Runner implements Service {
 		do_action( 'axle_smoke_test_baseline_accepted', $run, $accepted, $url_key );
 
 		return count( $accepted );
+	}
+
+	/**
+	 * What the last accept_baseline() call replaced, for an Undo.
+	 *
+	 * @return array[] new, old, url_key, tier, accepted per result.
+	 */
+	public function last_baseline_changes(): array {
+		return $this->last_baseline_changes;
+	}
+
+	/**
+	 * Takes an accepted baseline back: the old baselines and the findings
+	 * that were accepted on those pages are in force again.
+	 *
+	 * @param array<int, mixed> $changes From last_baseline_changes().
+	 * @return int Pages put back.
+	 */
+	public function undo_baseline( array $changes ): int {
+		$count = 0;
+		foreach ( $changes as $change ) {
+			if ( ! is_array( $change ) || empty( $change['new'] ) ) {
+				continue;
+			}
+			$this->runs->restore_baseline( (int) $change['new'], (int) ( $change['old'] ?? 0 ), (string) ( $change['url_key'] ?? '' ), (string) ( $change['tier'] ?? '' ) );
+			foreach ( (array) ( $change['accepted'] ?? array() ) as $sig ) {
+				Rules::accept( (string) ( $change['url_key'] ?? '' ), (string) $sig );
+			}
+			++$count;
+		}
+
+		/**
+		 * Fires after an accepted baseline was taken back.
+		 *
+		 * @param array[] $changes What was put back.
+		 */
+		do_action( 'axle_smoke_test_baseline_restored', $changes );
+
+		return $count;
 	}
 
 	/**

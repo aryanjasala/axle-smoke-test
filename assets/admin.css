@@ -126,3 +126,33 @@
 .ast-undo {
 	margin-left: 4px;
 }
+
+.ast-finding {
+	border-top: 1px solid #dcdcde;
+	padding: 8px 0;
+}
+
+.ast-finding:first-of-type {
+	border-top: 0;
+}
+
+.ast-finding summary {
+	cursor: pointer;
+}
+
+.ast-finding-message {
+	margin: 8px 0 4px;
+	overflow-wrap: anywhere;
+}
+
+.ast-finding .ul-disc {
+	margin: 4px 0 0 20px;
+}
+
+.ast-finding .ast-url {
+	font-size: 12px;
+}
+
+.ast-coverage-text {
+	margin-top: 0;
+}

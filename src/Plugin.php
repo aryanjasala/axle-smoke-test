@@ -65,6 +65,13 @@ final class Plugin {
 	private Cleanup $cleanup;
 
 	/**
+	 * The coverage set.
+	 *
+	 * @var Coverage
+	 */
+	private Coverage $coverage;
+
+	/**
 	 * Starts the plugin. Runs on `plugins_loaded`.
 	 */
 	public static function boot(): void {
@@ -90,7 +97,8 @@ final class Plugin {
 		$this->settings = new Settings();
 		$this->runs     = new Runs();
 		$attribution    = new Attribution();
-		$this->runner   = new Runner( $this->settings, $this->runs, new Urls( $this->settings ), new Checker( $this->settings, $attribution ), $attribution );
+		$this->coverage = new Coverage( $this->settings );
+		$this->runner   = new Runner( $this->settings, $this->runs, new Urls( $this->settings ), new Checker( $this->settings, $attribution ), $attribution, $this->coverage );
 		$this->rollback = new Rollback( $this->settings, $this->runner );
 		$this->cleanup  = new Cleanup( $this->settings, $this->runner );
 	}
@@ -129,6 +137,7 @@ final class Plugin {
 		$services = array(
 			new Schema(),
 			$this->runner,
+			$this->coverage,
 			new Triggers( $this->runner ),
 			new Backups(),
 			$this->rollback,

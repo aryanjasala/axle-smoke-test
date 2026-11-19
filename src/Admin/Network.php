@@ -98,9 +98,9 @@ final class Network implements Service {
 			wp_die( esc_html__( 'Sorry, you are not allowed to see this page.', 'axle-smoke-test' ), '', array( 'response' => 403 ) );
 		}
 
-		echo '<div class="wrap axle-ui ast-wrap"><h1>' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1><hr class="wp-header-end">';
+		echo '<div class="wrap axle-ui ast-wrap"><h1 class="wp-heading-inline">' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1><hr class="wp-header-end">';
 		echo '<p class="axle-intro">' . esc_html__( 'The latest smoke test of each site. Open a site\'s Tools > Smoke Test for its runs and settings.', 'axle-smoke-test' ) . '</p>';
-		echo '<table class="widefat striped"><thead><tr><th scope="col">' . esc_html__( 'Site', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Verdict', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'When', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Change', 'axle-smoke-test' ) . '</th></tr></thead><tbody>';
+		echo '<div class="axle-scroll" tabindex="0" role="region" aria-label="' . esc_attr__( 'Latest smoke test of each site', 'axle-smoke-test' ) . '"><table class="widefat striped"><thead><tr><th scope="col">' . esc_html__( 'Site', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Verdict', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'When', 'axle-smoke-test' ) . '</th><th scope="col">' . esc_html__( 'Change', 'axle-smoke-test' ) . '</th></tr></thead><tbody>';
 		foreach ( self::latest_per_site() as $row ) {
 			$run = $row['run'];
 			echo '<tr><th scope="row"><a href="' . esc_url( $row['url'] ) . '">' . esc_html( $row['name'] ) . '</a></th>';
@@ -108,7 +108,7 @@ final class Network implements Service {
 			echo '<td>' . ( $run ? Display::time( (string) $run['created_gmt'] ) : '' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 			echo '<td>' . esc_html( $run ? Display::change( $run ) : '' ) . '</td></tr>';
 		}
-		echo '</tbody></table>';
+		echo '</tbody></table></div>';
 		AxleUi::footer();
 		echo '</div>';
 	}

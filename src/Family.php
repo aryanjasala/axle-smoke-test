@@ -26,7 +26,8 @@ final class Family implements Service {
 	}
 
 	/**
-	 * Whether Axle Read-Only Mode has the site frozen.
+	 * Whether Axle Read-Only Mode has the site's code frozen: plugins, themes and
+	 * updates. A "Content only" freeze leaves code open, so a rollback may go on.
 	 *
 	 * @return bool
 	 */
@@ -37,7 +38,38 @@ final class Family implements Service {
 		}
 		$plugin = call_user_func( array( $class, 'instance' ) );
 
-		return is_object( $plugin ) && method_exists( $plugin, 'state' ) && $plugin->state()->is_frozen();
+		if ( ! is_object( $plugin ) || ! method_exists( $plugin, 'state' ) ) {
+			return false;
+		}
+		$state = $plugin->state();
+		// Older Read-Only Mode versions know only "frozen or not".
+		$frozen = method_exists( $state, 'freezes' ) ? $state->freezes( 'code' ) : $state->is_frozen();
+		if ( ! $frozen ) {
+			return false;
+		}
+
+		/**
+		 * Filters whether a rollback is still allowed while the code is frozen.
+		 * Axle Read-Only Mode's "Freeze until green" returns true here, so a
+		 * red run can be rolled back inside the freeze that is waiting for it.
+		 *
+		 * @param bool   $allowed Default false.
+		 * @param object $state   Read-Only Mode's State object.
+		 */
+		return ! (bool) apply_filters( 'axle_smoke_test_rollback_in_freeze', false, $state );
+	}
+
+	/**
+	 * What a 401 most likely means on this site.
+	 *
+	 * @return string
+	 */
+	public static function unauthorized_hint(): string {
+		if ( class_exists( '\AryanX\Axle\StagingGuard\Plugin' ) ) {
+			return __( 'The likely cause is a password screen, such as Staging Guard\'s gate. Staging Guard lets this plugin\'s own checks through, so update both plugins. If the gate still answers 401, or the server asks for a username and password, add them under Settings > Basic auth.', 'axle-smoke-test' );
+		}
+
+		return __( 'The likely cause is a password screen, such as server Basic auth or a gate plugin. If the server asks for a username and password, add them under Settings > Basic auth.', 'axle-smoke-test' );
 	}
 
 	/**

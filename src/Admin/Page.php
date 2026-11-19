@@ -8,6 +8,7 @@
 namespace AryanX\Axle\SmokeTest\Admin;
 
 use AryanX\Axle\SmokeTest\Backups;
+use AryanX\Axle\SmokeTest\Coverage;
 use AryanX\Axle\SmokeTest\Family;
 use AryanX\Axle\SmokeTest\Presets;
 use AryanX\Axle\SmokeTest\RoleUser;
@@ -33,7 +34,7 @@ final class Page implements Service {
 
 	public const SLUG = 'axle-smoke-test';
 
-	private const ACTIONS = array( 'save_settings', 'add_url', 'remove_url', 'baseline', 'rollback', 'run', 'mu_plugin', 'dismiss', 'save_rules', 'accept_finding', 'add_suggestions', 'dismiss_steps', 'undo' );
+	private const ACTIONS = array( 'save_settings', 'add_url', 'remove_url', 'baseline', 'rollback', 'run', 'mu_plugin', 'dismiss', 'save_rules', 'accept_finding', 'add_suggestions', 'dismiss_steps', 'undo', 'coverage_scan' );
 
 	/** The user meta that hides the Get started card. */
 	public const STEPS_META = 'axle_smoke_test_steps_dismissed';
@@ -192,7 +193,7 @@ final class Page implements Service {
 		$latest = $this->runner->runs()->latest();
 
 		echo '<div class="wrap axle-ui ast-wrap">';
-		echo '<h1>' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1>';
+		echo '<h1 class="wp-heading-inline">' . esc_html__( 'Smoke Test', 'axle-smoke-test' ) . '</h1>';
 		if ( $latest ) {
 			echo '<span class="axle-status">' . Display::badge( (string) $latest['verdict'], (string) $latest['status'] ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 		}
@@ -228,24 +229,26 @@ final class Page implements Service {
 		$error = isset( $_GET['error'] ) ? sanitize_text_field( rawurldecode( (string) wp_unslash( $_GET['error'] ) ) ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Sanitised after decoding.
 		// phpcs:enable
 		$messages = array(
-			'saved'            => __( 'Settings saved.', 'axle-smoke-test' ),
-			'url_added'        => __( 'URL added.', 'axle-smoke-test' ),
-			'url_removed'      => __( 'URL removed.', 'axle-smoke-test' ),
-			'baseline'         => __( 'Accepted as the new baseline. The next run compares against it.', 'axle-smoke-test' ),
-			'rolled_back'      => __( 'Rolled back. The smoke test ran again: see the new run below.', 'axle-smoke-test' ),
-			'ran'              => __( 'Smoke test finished.', 'axle-smoke-test' ),
-			'mu_installed'     => __( 'Early collector installed in wp-content/mu-plugins.', 'axle-smoke-test' ),
-			'mu_removed'       => __( 'Early collector removed.', 'axle-smoke-test' ),
-			'rules_saved'      => __( 'Rules saved. They apply from the next run.', 'axle-smoke-test' ),
-			'finding_accepted' => __( 'Accepted. Later runs stop reporting this finding for this page.', 'axle-smoke-test' ),
-			'finding_restored' => __( 'Taken back. Later runs report this finding again.', 'axle-smoke-test' ),
-			'url_restored'     => __( 'URL restored.', 'axle-smoke-test' ),
-			'suggestions'      => __( 'Pages added. Run now to set their baseline.', 'axle-smoke-test' ),
-			'steps_dismissed'  => __( 'The Get started steps are hidden.', 'axle-smoke-test' ),
+			'saved'             => __( 'Settings saved.', 'axle-smoke-test' ),
+			'url_added'         => __( 'URL added.', 'axle-smoke-test' ),
+			'url_removed'       => __( 'URL removed.', 'axle-smoke-test' ),
+			'baseline'          => __( 'Accepted as the new baseline. The next run compares against it.', 'axle-smoke-test' ),
+			'rolled_back'       => __( 'Rolled back. The smoke test ran again: see the new run below.', 'axle-smoke-test' ),
+			'ran'               => __( 'Smoke test finished.', 'axle-smoke-test' ),
+			'mu_installed'      => __( 'Early collector installed in wp-content/mu-plugins.', 'axle-smoke-test' ),
+			'mu_removed'        => __( 'Early collector removed.', 'axle-smoke-test' ),
+			'rules_saved'       => __( 'Rules saved. They apply from the next run.', 'axle-smoke-test' ),
+			'finding_accepted'  => __( 'Accepted. Later runs stop reporting this finding for this page.', 'axle-smoke-test' ),
+			'finding_restored'  => __( 'Taken back. Later runs report this finding again.', 'axle-smoke-test' ),
+			'baseline_restored' => __( 'Taken back. The old baseline is in force again.', 'axle-smoke-test' ),
+			'url_restored'      => __( 'URL restored.', 'axle-smoke-test' ),
+			'suggestions'       => __( 'Pages added. Run now to set their baseline.', 'axle-smoke-test' ),
+			'coverage_scan'     => __( 'Scan started. It runs in the background, and the numbers update when it finishes.', 'axle-smoke-test' ),
+			'steps_dismissed'   => __( 'The Get started steps are hidden.', 'axle-smoke-test' ),
 		);
 		if ( isset( $messages[ $done ] ) ) {
 			$undo = '';
-			if ( in_array( $done, array( 'url_removed', 'finding_accepted' ), true ) && self::undo_pending() ) {
+			if ( in_array( $done, array( 'url_removed', 'finding_accepted', 'baseline' ), true ) && self::undo_pending() ) {
 				ob_start();
 				self::post_button( 'undo', __( 'Undo', 'axle-smoke-test' ), array(), 'button-link ast-undo' );
 				$undo = ' ' . ob_get_clean();
@@ -338,6 +341,8 @@ final class Page implements Service {
 		echo '</div>';
 		echo '<p class="description">' . esc_html__( 'Run now checks every key URL from the server, then in this browser.', 'axle-smoke-test' ) . '</p>';
 		echo '<div class="notice notice-info inline ast-run-box ast-panel-inline" role="status" aria-live="polite" aria-busy="false" hidden><p><span class="spinner"></span><span class="ast-panel-status"></span></p></div>';
+
+		$this->coverage_card();
 
 		if ( ! $latest ) {
 			echo '<div class="axle-empty"><p>' . esc_html__( 'No runs yet. Each run shows here with its verdict: red, amber or green. A run starts by itself after every plugin, theme or core update, theme switch, plugin activation or deploy. To set the first baseline now, press Run now.', 'axle-smoke-test' ) . '</p><p><a class="button" href="' . esc_url( self::url( array( 'tab' => 'settings' ) ) ) . '">' . esc_html__( 'Choose the pages to check', 'axle-smoke-test' ) . '</a></p></div>';
@@ -488,6 +493,51 @@ final class Page implements Service {
 	}
 
 	/**
+	 * The coverage card: what the check covers and when the content was last scanned.
+	 */
+	private function coverage_card(): void {
+		$coverage = $this->runner->coverage();
+		if ( ! $coverage ) {
+			return;
+		}
+		$summary = $coverage->summary();
+
+		echo '<section class="axle-card ast-coverage" aria-labelledby="ast-coverage-title">';
+		echo '<h2 class="axle-card__title" id="ast-coverage-title">' . esc_html__( 'Coverage', 'axle-smoke-test' ) . '</h2>';
+		if ( ! $coverage->enabled() ) {
+			echo '<p>' . esc_html__( 'The coverage check is off, so only the key URLs are checked.', 'axle-smoke-test' ) . ' <a href="' . esc_url( self::url( array( 'tab' => 'settings' ) ) ) . '">' . esc_html__( 'Turn it on in Settings', 'axle-smoke-test' ) . '</a></p></section>';
+			return;
+		}
+		echo '<p class="ast-coverage-text">' . esc_html( Display::coverage( $summary ) ) . '</p>';
+		echo '<p class="description">';
+		if ( $summary['scanning'] ) {
+			echo esc_html__( 'Scanning your content in the background. The numbers update when it finishes.', 'axle-smoke-test' );
+		} elseif ( $summary['scanned'] > 0 ) {
+			/* translators: %s: time of the last scan, such as "5 minutes ago". */
+			echo esc_html__( 'The newest published page for each one, after the key URLs.', 'axle-smoke-test' ) . ' ' . esc_html__( 'Last scanned', 'axle-smoke-test' ) . ' ' . AxleUi::relative_time( (int) $summary['scanned'] ) . '.'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in AxleUi.
+		} else {
+			echo esc_html__( 'The first scan starts in the background.', 'axle-smoke-test' );
+		}
+		echo '</p><div class="axle-actions">';
+		if ( ! $summary['scanning'] ) {
+			self::post_button( 'coverage_scan', __( 'Scan the content again', 'axle-smoke-test' ), array(), 'button' );
+		}
+		echo '</div></section>';
+	}
+
+	/**
+	 * Starts a new coverage scan.
+	 */
+	public function handle_coverage_scan(): void {
+		$this->verify( 'coverage_scan' );
+		$coverage = $this->runner->coverage();
+		if ( $coverage && $coverage->enabled() && ! Coverage::state()['scan'] ) {
+			$coverage->start();
+		}
+		$this->back( array( 'done' => 'coverage_scan' ) );
+	}
+
+	/**
 	 * The page counts of a run, as stats.
 	 *
 	 * @param array $counts Counts by verdict.
@@ -566,6 +616,15 @@ final class Page implements Service {
 		}
 		echo '<dt>' . esc_html__( 'Status', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( Display::status( (string) $run['status'] ) ) . '</dd>';
 		echo '<dt>' . esc_html__( 'Checked by', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( self::tiers( (array) ( $summary['tiers'] ?? array() ), (string) $run['status'] ) ) . '</dd>';
+		$cover = (array) ( $run['context']['coverage'] ?? array() );
+		if ( $cover ) {
+			echo '<dt>' . esc_html__( 'Coverage', 'axle-smoke-test' ) . '</dt><dd class="ast-coverage-run">' . esc_html( Display::coverage( $cover ) );
+			if ( ! empty( $cover['skipped'] ) ) {
+				/* translators: 1: pages left out, 2: pages planned. */
+				echo ' ' . esc_html( sprintf( _n( '%1$d of %2$d page was skipped to stay inside the time budget.', '%1$d of %2$d pages were skipped to stay inside the time budget.', (int) $cover['skipped'], 'axle-smoke-test' ), (int) $cover['skipped'], (int) $cover['planned'] ) );
+			}
+			echo '</dd>';
+		}
 		$duration = Display::duration( (int) ( $run['context']['duration_ms'] ?? 0 ) );
 		if ( '' !== $duration ) {
 			echo '<dt>' . esc_html__( 'Server tier took', 'axle-smoke-test' ) . '</dt><dd>' . esc_html( $duration ) . '</dd>';
@@ -578,7 +637,7 @@ final class Page implements Service {
 				'baseline',
 				__( 'Accept as baseline', 'axle-smoke-test' ),
 				array( 'run' => $run_id ),
-				__( 'Every page in this run becomes the baseline that later runs are compared with, in place of the old one. Use it when the changes were meant. You cannot undo it, but the next green run sets a new baseline.', 'axle-smoke-test' ),
+				__( 'Every page in this run becomes the baseline that later runs are compared with, in place of the old one. Use it when the changes were meant. Pages that failed on status or a fatal error are left out. You can undo it right after.', 'axle-smoke-test' ),
 				__( 'Replace the baseline', 'axle-smoke-test' )
 			);
 		}
@@ -611,7 +670,63 @@ final class Page implements Service {
 			}
 		}
 
+		$this->findings( $results );
 		$this->results_table( $run, $results );
+	}
+
+	/**
+	 * What went wrong, grouped by error, with the pages folded under each.
+	 *
+	 * @param array[] $results Results.
+	 */
+	private function findings( array $results ): void {
+		$groups = Verdict::group_findings( $results );
+		if ( ! $groups ) {
+			return;
+		}
+
+		echo '<section class="axle-card ast-findings" aria-labelledby="ast-findings-title">';
+		echo '<h2 class="axle-card__title" id="ast-findings-title">' . esc_html__( 'Findings', 'axle-smoke-test' ) . '</h2>';
+		foreach ( $groups as $group ) {
+			$count  = count( $group['pages'] );
+			$source = '' !== $group['source'] && 'unknown' !== $group['source'] ? ' (' . Display::source( $group['source'] ) . ')' : '';
+			echo '<details class="ast-finding ast-finding-' . esc_attr( $group['level'] ) . '"><summary>';
+			echo Display::badge( $group['level'] ) . ' <strong class="ast-finding-count">' . esc_html( self::finding_headline( $group['code'], $count ) ) . '</strong>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+			echo '</summary>';
+			echo '<p class="ast-finding-message">' . esc_html( $group['message'] . $source ) . '</p>';
+			echo '<ul class="ul-disc">';
+			foreach ( $group['pages'] as $page ) {
+				echo '<li>' . esc_html( $page['label'] );
+				if ( '' !== $page['url'] ) {
+					echo ' <a class="ast-url" href="' . esc_url( $page['url'] ) . '">' . esc_html( (string) wp_parse_url( $page['url'], PHP_URL_PATH ) ) . '</a>';
+				}
+				echo '</li>';
+			}
+			echo '</ul></details>';
+		}
+		echo '</section>';
+	}
+
+	/**
+	 * "1 fatal error on 6 pages".
+	 *
+	 * @param string $code  Finding code.
+	 * @param int    $pages Pages it was found on.
+	 * @return string
+	 */
+	private static function finding_headline( string $code, int $pages ): string {
+		$kinds = array(
+			'fatal'          => __( 'fatal error', 'axle-smoke-test' ),
+			'critical_error' => __( 'critical error screen', 'axle-smoke-test' ),
+			'status'         => __( 'wrong HTTP status', 'axle-smoke-test' ),
+			'no_response'    => __( 'page with no response', 'axle-smoke-test' ),
+			'blank'          => __( 'blank page', 'axle-smoke-test' ),
+			'php_error'      => __( 'new PHP error', 'axle-smoke-test' ),
+		);
+		$kind  = $kinds[ $code ] ?? __( 'finding', 'axle-smoke-test' );
+
+		/* translators: 1: the kind of problem, such as "fatal error", 2: number of pages. */
+		return sprintf( _n( '1 %1$s on %2$d page', '1 %1$s on %2$d pages', $pages, 'axle-smoke-test' ), $kind, $pages );
 	}
 
 	/**
@@ -698,6 +813,13 @@ final class Page implements Service {
 			return;
 		}
 
+		$shared = array();
+		foreach ( Verdict::group_findings( $results ) as $group ) {
+			if ( count( $group['pages'] ) > 1 ) {
+				$shared[ $group['code'] . '|' . $group['message'] ] = count( $group['pages'] );
+			}
+		}
+
 		$tiers = array(
 			'server'  => __( 'Server', 'axle-smoke-test' ),
 			'browser' => __( 'Browser', 'axle-smoke-test' ),
@@ -738,8 +860,11 @@ final class Page implements Service {
 			if ( $reasons ) {
 				echo '<ul class="ast-reasons">';
 				foreach ( $reasons as $reason ) {
-					$source = ! empty( $reason['source'] ) && 'unknown' !== $reason['source'] ? ' (' . Display::source( (string) $reason['source'] ) . ')' : '';
-					echo '<li class="ast-reason">' . Display::badge( (string) $reason['level'] ) . ' ' . esc_html( (string) $reason['message'] . $source ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
+					$source    = ! empty( $reason['source'] ) && 'unknown' !== $reason['source'] ? ' (' . Display::source( (string) $reason['source'] ) . ')' : '';
+					$shared_on = $shared[ (string) ( $reason['code'] ?? '' ) . '|' . (string) $reason['message'] ] ?? 0;
+					/* translators: 1: kind of problem, such as "fatal error", 2: number of pages. */
+					$text = $shared_on ? sprintf( __( 'Same as the finding above: %s', 'axle-smoke-test' ), self::finding_headline( (string) ( $reason['code'] ?? '' ), $shared_on ) ) : (string) $reason['message'] . $source;
+					echo '<li class="ast-reason">' . Display::badge( (string) $reason['level'] ) . ' ' . esc_html( $text ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in Display.
 					if ( ! empty( $reason['acceptable'] ) && ! empty( $reason['sig'] ) ) {
 						self::confirm_button(
 							'accept_finding',
@@ -774,6 +899,8 @@ final class Page implements Service {
 			echo '<td>';
 			if ( $result['is_baseline'] ) {
 				echo esc_html__( 'Baseline', 'axle-smoke-test' );
+			} elseif ( Verdict::blocks_baseline( $result ) ) {
+				echo '<span class="axle-muted">' . esc_html__( 'Failed, so it cannot be the baseline', 'axle-smoke-test' ) . '</span>';
 			} else {
 				self::confirm_button(
 					'baseline',
@@ -782,7 +909,7 @@ final class Page implements Service {
 						'run'     => (int) $run['id'],
 						'url_key' => (string) $result['url_key'],
 					),
-					__( 'This page, as it is in this run, becomes its baseline in place of the old one. You cannot undo it, but the next green run sets a new baseline.', 'axle-smoke-test' ),
+					__( 'This page, as it is in this run, becomes its baseline in place of the old one. You can undo it right after.', 'axle-smoke-test' ),
 					__( 'Replace the baseline', 'axle-smoke-test' ),
 					'button button-small',
 					/* translators: %s: page label. */
@@ -1043,6 +1170,17 @@ final class Page implements Service {
 			);
 		}
 
+		if ( 'baseline' === ( $undo['type'] ?? '' ) ) {
+			$run = (int) ( $undo['run'] ?? 0 );
+			$this->runner->undo_baseline( (array) ( $undo['changes'] ?? array() ) );
+			$this->back(
+				array(
+					'run'  => $run,
+					'done' => 'baseline_restored',
+				)
+			);
+		}
+
 		$run  = (int) ( $undo['run'] ?? 0 );
 		$done = $this->runner->restore_finding( $run, (string) ( $undo['key'] ?? '' ), (string) ( $undo['sig'] ?? '' ) );
 		$this->back(
@@ -1064,6 +1202,15 @@ final class Page implements Service {
 		$key = isset( $_POST['url_key'] ) ? sanitize_key( wp_unslash( $_POST['url_key'] ) ) : '';
 		// phpcs:enable
 		$accepted = $this->runner->accept_baseline( $run, $key );
+		if ( ! is_wp_error( $accepted ) ) {
+			self::remember_undo(
+				array(
+					'type'    => 'baseline',
+					'run'     => $run,
+					'changes' => $this->runner->last_baseline_changes(),
+				)
+			);
+		}
 		$this->back(
 			array(
 				'run'  => $run,

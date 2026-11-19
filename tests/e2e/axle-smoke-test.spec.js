@@ -171,8 +171,9 @@ test.describe.serial( 'Axle Smoke Test', () => {
 		expect( home.verdict ).toBe( 'amber' );
 		expect( home.js_errors[ 0 ].message ).toContain( 'Smoke Fixture 1.3 broke a script' );
 		expect( home.js_errors[ 0 ].source ).toBe( 'plugin:smoke-fixture' );
-		await expect( page.locator( '.ast-result-amber[data-url-key="home"][data-tier="browser"]' ) ).toContainText( 'New JavaScript error' );
-		await expect( page.locator( '.ast-result-amber[data-url-key="home"][data-tier="browser"]' ) ).toContainText( '(Smoke Fixture)' );
+		// The same script error shows on every page, so the run groups it: the finding names the error and the plugin.
+		await expect( page.locator( '.ast-findings' ) ).toContainText( 'New JavaScript error' );
+		await expect( page.locator( '.ast-findings' ) ).toContainText( '(Smoke Fixture)' );
 	} );
 
 	test( 'the axleSmokeTest.ignoredJsErrors filter and urlChecked action work in the browser', async ( { page } ) => {

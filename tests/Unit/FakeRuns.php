@@ -125,6 +125,15 @@ class FakeRuns extends Runs {
 		$this->results[ (int) $result['id'] ]['is_baseline'] = 1;
 	}
 
+	public function restore_baseline( int $new_id, int $old_id, string $url_key, string $tier ): void {
+		if ( isset( $this->results[ $new_id ] ) ) {
+			$this->results[ $new_id ]['is_baseline'] = 0;
+		}
+		if ( $old_id > 0 && isset( $this->results[ $old_id ] ) ) {
+			$this->results[ $old_id ]['is_baseline'] = 1;
+		}
+	}
+
 	public function delete( array $ids ): int {
 		$deleted = 0;
 		foreach ( $ids as $id ) {

@@ -192,13 +192,88 @@ final class RunnerTest extends SmokeTestCase {
 	public function test_accepting_a_baseline(): void {
 		Actions\expectDone( 'axle_smoke_test_baseline_accepted' )->once();
 		$runner                         = $this->runner();
-		$this->checker->answers['shop'] = array( 'http_status' => 500 );
+		$this->checker->answers['shop'] = array( 'php_errors' => array( array( 'type' => 'warning', 'message' => 'Undefined variable $x', 'file' => '', 'line' => 1 ) ) );
 		$run                            = $runner->start( 'cli', array( 'browser' => false ), 0 );
 		$this->assertSame( 0, $this->runs->results[2]['is_baseline'] );
 
 		$this->assertSame( 1, $runner->accept_baseline( (int) $run['id'], 'shop' ) );
 		$this->assertSame( 1, $this->runs->results[2]['is_baseline'] );
 		$this->assertSame( 'axle_smoke_test_no_results', $runner->accept_baseline( (int) $run['id'], 'nope' )->get_error_code() );
+	}
+
+	public function test_a_page_that_failed_on_status_or_a_fatal_never_becomes_the_baseline(): void {
+		$runner                         = $this->runner();
+		$this->checker->answers['shop'] = array( 'http_status' => 500 );
+		$run                            = $runner->start( 'cli', array( 'browser' => false ), 0 );
+
+		$this->assertSame( 'axle_smoke_test_no_results', $runner->accept_baseline( (int) $run['id'], 'shop' )->get_error_code() );
+		$this->assertSame( 0, $this->runs->results[2]['is_baseline'] );
+		// A whole-run accept leaves the failed page out and takes the rest.
+		$this->assertSame( 1, $runner->accept_baseline( (int) $run['id'] ) );
+	}
+
+	public function test_an_accepted_baseline_can_be_taken_back(): void {
+		$runner = $this->runner();
+		$first  = $runner->start( 'cli', array( 'browser' => false ), 0 );
+		$this->assertSame( 1, $this->runs->results[1]['is_baseline'] );
+
+		$this->checker->answers['home'] = array( 'php_errors' => array( array( 'type' => 'warning', 'message' => 'Deprecated thing', 'file' => '', 'line' => 3 ) ) );
+		$second                         = $runner->start( 'cli', array( 'browser' => false ), 0 );
+		$new                            = 0;
+		foreach ( $this->runs->results as $id => $result ) {
+			if ( (int) $result['run_id'] === (int) $second['id'] && 'home' === $result['url_key'] ) {
+				$new = $id;
+			}
+		}
+		$this->assertSame( 0, $this->runs->results[ $new ]['is_baseline'] );
+
+		$this->assertSame( 1, $runner->accept_baseline( (int) $second['id'], 'home' ) );
+		$this->assertSame( 1, $this->runs->results[ $new ]['is_baseline'] );
+		$this->assertSame( 0, $this->runs->results[1]['is_baseline'] );
+
+		Actions\expectDone( 'axle_smoke_test_baseline_restored' )->once();
+		$this->assertSame( 1, $runner->undo_baseline( $runner->last_baseline_changes() ) );
+		$this->assertSame( 0, $this->runs->results[ $new ]['is_baseline'] );
+		$this->assertSame( 1, $this->runs->results[1]['is_baseline'] );
+		$this->assertSame( (int) $first['id'], (int) $this->runs->results[1]['run_id'] );
+	}
+
+	public function test_run_finished_carries_the_shared_shape(): void {
+		$seen = array();
+		Actions\expectDone( 'axle_smoke_test_run_finished' )->once()->whenHappen(
+			static function ( $run ) use ( &$seen ) {
+				$seen = $run;
+			}
+		);
+		$run = $this->runner()->start( 'manual', array( 'browser' => false ), 1 );
+
+		$this->assertSame( (int) $run['id'], (int) $seen['id'] );
+		$this->assertSame( 'green', $seen['verdict'] );
+		$this->assertSame( 'manual', $seen['source'] );
+		$this->assertTrue( $seen['final'] );
+		$this->assertIsInt( $seen['finished'] );
+		$this->assertGreaterThan( 0, $seen['finished'] );
+	}
+
+	public function test_run_now_queues_a_run_and_the_source_comes_back_on_finish(): void {
+		$runner = $this->runner();
+		$runner->run_now( 'axle-read-only-mode' );
+
+		$this->assertCount( 1, $this->runs->runs );
+		$queued = $this->runs->get( 1 );
+		$this->assertSame( 'queued', $queued['status'] );
+		$this->assertSame( 'axle-read-only-mode', $queued['context']['source'] );
+		$this->assertSame( Schema::RUN_HOOK, $this->events[0][1] );
+		$this->assertLessThanOrEqual( time() + 1, $this->events[0][0] );
+
+		$seen = array();
+		Actions\expectDone( 'axle_smoke_test_run_finished' )->once()->whenHappen(
+			static function ( $run ) use ( &$seen ) {
+				$seen = $run;
+			}
+		);
+		$runner->execute( 1, true );
+		$this->assertSame( 'axle-read-only-mode', $seen['source'] );
 	}
 
 	private function red_run_with_finding(): int {

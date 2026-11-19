@@ -40,8 +40,13 @@ Part of Axle by AryanX, a family of plugins for running WordPress sites safely.
 
 When you have wp-admin open, the same pages load in a hidden frame. It records JavaScript errors (with the plugin whose script threw them), files and images that failed to load, and where the landmarks sit on the page. A run started by cron waits for the next admin page view, and says so.
 
+**One page for every block, shortcode and template:**
+
+Twelve key URLs miss the page that breaks. A gallery plugin update can break only the posts that have a gallery. So a background scan reads your published content in small batches and remembers the newest page for every block type, shortcode and template your site uses. After the key URLs, each run also opens those pages and blames what it finds the same way. The Runs screen says what is covered: "Checks 38 pages covering 61 block types, 7 shortcodes, 9 templates." Switch it off under Settings, or limit it with filters.
+
 **Verdicts:**
 
+* A finding that shows on many pages is one finding: "1 fatal error on 6 pages", with the pages folded under it.
 * Red: an unexpected 4xx or 5xx, a fatal error, the critical error page, a blank page, a header, form or button that went missing, or a broken rule.
 * Amber: new PHP warnings, new JavaScript errors, missing files, far fewer links, images or text, a landmark moved, or the text changed a lot.
 * Green: the page looks like its baseline, the last green run. A redesign is not a failure: accept the run as the new baseline.
@@ -66,14 +71,15 @@ Email, a webhook (generic JSON or Slack), an admin notice, and a Site Health tes
 
 * Activity Log with Undo logs runs and rollbacks.
 * Update Rehearsal is suggested for the next update of what broke.
-* Axle Read-Only Mode blocks rollbacks while the site is frozen.
+* Axle Read-Only Mode blocks rollbacks while plugins and themes are frozen. A "Content only" freeze leaves them open.
+* Axle Staging Guard's password gate lets this plugin's own checks through.
 
 Free and open source under the GPL. No pro version, no upsells, no ads in wp-admin, no tracking. And it stays that way.
 
 = WP-CLI =
 
 * `wp axle-smoke-test run [--urls=<keys>] [--reason=<text>] [--wait]` runs a check now and exits with 1 on red.
-* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `rules list|set|clear`, `findings accept|restore`, `suggestions list|add`, `role-checks status|on|off`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
+* `wp axle-smoke-test list`, `show <id>`, `urls list|add|remove`, `rules list|set|clear`, `findings accept|restore`, `suggestions list|add`, `coverage status|rescan`, `role-checks status|on|off`, `baseline accept <run-id>`, `rollback <run-id> [--item=<plugin>]`, `backups list|purge` and `purge`.
 
 = For developers =
 
@@ -99,11 +105,19 @@ No. Nothing runs on normal page views. A run makes one request per key URL (and 
 
 = My host blocks loopback requests. =
 
-Then the server checks cannot run. The run fails with core's own loopback test result from Site Health, so you know why. Sites behind a password prompt work: add the username and password in the settings.
+Then the server checks cannot run. The run fails with core's own loopback test result from Site Health, so you know why. Sites behind a server password prompt work: add the username and password in the settings. Staging Guard's gate lets the checks through by itself. If a check gets HTTP 401, the run says a password screen is the likely cause.
 
 = A page says it is fine but a form is missing. Will it notice? =
 
 Yes. Each page's parts are learned at baseline. When a header, footer, menu, form or Add to cart button disappears, the page turns red and the run says what is gone. If the change was meant, accept that one finding. You can also add rules per page, such as a must-contain selector.
+
+= Does it check every page of my site? =
+
+No. It checks your key URLs, plus one page for each block type, shortcode and template in use: the newest published one. That is usually a few dozen pages, inside a 90-second budget. Pages that do not fit are skipped, and the run says how many.
+
+= Can I accept a broken page as the baseline? =
+
+No. A page that failed on status or a fatal error never becomes the baseline. Other changes can be accepted, and you can undo that from the notice right after.
 
 = Does it take screenshots? =
 
@@ -127,8 +141,8 @@ Yes, per site. Network Admin > Settings > Smoke Test shows the latest verdict of
 
 == Screenshots ==
 
-1. A red run after an update: the fatal error, the plugin that caused it, and the one-click rollback.
-2. The latest run and every run before it.
+1. A red run after an update: the fatal error grouped across pages, the plugin that caused it, and the one-click rollback.
+2. The latest run, what the coverage check covers, and every run before it.
 3. Right after an update on the Plugins screen, the check runs and shows the verdict.
 4. An amber run: a new JavaScript error, found by the check in your browser.
 5. Settings: key URLs, what to check and how to be told.

@@ -337,6 +337,74 @@
           "waitFor": ".ast-urls .axle-confirm"
         }
       ]
+    },
+    {
+      "name": "Runs list with the coverage card after a scan",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "js": "seed.js",
+          "call": "seedCoverage"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test",
+      "steps": [
+        {
+          "waitFor": ".ast-coverage .ast-coverage-text"
+        }
+      ]
+    },
+    {
+      "name": "Runs list with the coverage check switched off",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens"
+        },
+        {
+          "wp": [
+            "eval",
+            "$s = AryanX\\Axle\\SmokeTest\\Plugin::instance()->settings(); $s->update( array( 'coverage' => false ) );"
+          ]
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test",
+      "steps": [
+        {
+          "waitFor": ".ast-coverage"
+        }
+      ],
+      "cleanup": [
+        {
+          "wp": [
+            "option",
+            "delete",
+            "axle_smoke_test_settings"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "A red run with findings grouped by error and the pages folded open",
+      "setup": [
+        {
+          "js": "seed.js",
+          "call": "seedScreens",
+          "save": "seeded"
+        }
+      ],
+      "url": "/wp-admin/tools.php?page=axle-smoke-test&run={seeded.red}",
+      "steps": [
+        {
+          "waitFor": ".ast-finding"
+        },
+        {
+          "click": ".ast-finding summary"
+        }
+      ]
     }
   ],
   "skip": {}

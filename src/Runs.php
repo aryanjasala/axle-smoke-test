@@ -273,6 +273,25 @@ class Runs {
 	}
 
 	/**
+	 * Puts a result's previous baseline back: the result stops being the
+	 * baseline, and the one before it (when there was one) is the baseline again.
+	 *
+	 * @param int    $new_id  The result that became the baseline.
+	 * @param int    $old_id  The baseline it replaced, or 0 when there was none.
+	 * @param string $url_key URL key.
+	 * @param string $tier    Tier.
+	 */
+	public function restore_baseline( int $new_id, int $old_id, string $url_key, string $tier ): void {
+		global $wpdb;
+		$table = Schema::results_table();
+		$wpdb->update( $table, array( 'is_baseline' => 0 ), array( 'id' => $new_id ) );
+		if ( $old_id > 0 ) {
+			$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET is_baseline = 0 WHERE url_key = %s AND tier = %s AND is_baseline = 1", $url_key, $tier ) );
+			$wpdb->update( $table, array( 'is_baseline' => 1 ), array( 'id' => $old_id ) );
+		}
+	}
+
+	/**
 	 * Every baseline result.
 	 *
 	 * @return array[]
